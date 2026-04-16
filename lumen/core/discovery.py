@@ -177,12 +177,17 @@ def _discover_modules(registry: Registry, modules_dir: Path):
                 manifest = yaml.safe_load(f) or {}
 
             name = manifest.get("name", module_dir.name)
+
+            # Module is installed (it's in modules/ dir) — check if its skill is ready
+            has_skill = (module_dir / "SKILL.md").exists()
+            status = CapabilityStatus.READY if has_skill else CapabilityStatus.AVAILABLE
+
             registry.register(
                 Capability(
                     kind=CapabilityKind.MODULE,
                     name=name,
                     description=manifest.get("description", ""),
-                    status=CapabilityStatus.AVAILABLE,
+                    status=status,
                     requires={
                         "skills": manifest.get("skills_required", []),
                         "channels": manifest.get("channels_supported", []),
