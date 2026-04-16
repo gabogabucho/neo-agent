@@ -117,47 +117,44 @@
     <div id="panel-status" class="hidden flex-1 overflow-y-auto p-8">
       <h2 class="text-2xl font-bold text-white mb-6">{{ ui.status | default('Status') }}</h2>
 
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <!-- Model Card -->
+      <!-- Top cards -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div class="bg-neo-card rounded-xl border border-neo-border p-5">
-          <div class="flex items-center gap-3 mb-3">
-            <div class="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center">
-              <svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
-              </svg>
-            </div>
-            <span class="text-sm text-gray-400">{{ ui.model | default('Model') }}</span>
-          </div>
-          <p class="text-white font-semibold text-lg">{{ model }}</p>
+          <span class="text-xs text-gray-500 uppercase tracking-wider">{{ ui.model | default('Model') }}</span>
+          <p id="stat-model" class="text-white font-semibold mt-1">{{ model }}</p>
         </div>
-
-        <!-- Connectors Card -->
         <div class="bg-neo-card rounded-xl border border-neo-border p-5">
-          <div class="flex items-center gap-3 mb-3">
-            <div class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
-              <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-              </svg>
-            </div>
-            <span class="text-sm text-gray-400">Connectors</span>
-          </div>
-          <p class="text-white font-semibold text-lg">{{ connectors_count }}</p>
+          <span class="text-xs text-gray-500 uppercase tracking-wider">Connectors</span>
+          <p id="stat-connectors" class="text-white font-semibold mt-1">{{ connectors_count }}</p>
         </div>
-
-        <!-- Flows Card -->
         <div class="bg-neo-card rounded-xl border border-neo-border p-5">
-          <div class="flex items-center gap-3 mb-3">
-            <div class="w-8 h-8 rounded-lg bg-green-500/20 flex items-center justify-center">
-              <svg class="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
-              </svg>
-            </div>
-            <span class="text-sm text-gray-400">Flows</span>
-          </div>
-          <p class="text-white font-semibold text-lg">{{ flows_count }}</p>
+          <span class="text-xs text-gray-500 uppercase tracking-wider">Flows</span>
+          <p id="stat-flows" class="text-white font-semibold mt-1">{{ flows_count }}</p>
+        </div>
+        <div class="bg-neo-card rounded-xl border border-neo-border p-5">
+          <span class="text-xs text-gray-500 uppercase tracking-wider">{{ ui.channels | default('Channels') }}</span>
+          <p id="stat-channels" class="text-white font-semibold mt-1">1</p>
         </div>
       </div>
 
+      <!-- Connectors detail -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <div class="bg-neo-card rounded-xl border border-neo-border p-5">
+          <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Connectors</h3>
+          <div id="connectors-list" class="space-y-2">
+            <p class="text-gray-500 text-sm">Loading...</p>
+          </div>
+        </div>
+
+        <div class="bg-neo-card rounded-xl border border-neo-border p-5">
+          <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Flows</h3>
+          <div id="flows-list" class="space-y-2">
+            <p class="text-gray-500 text-sm">Loading...</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Personality -->
       <div class="bg-neo-card rounded-xl border border-neo-border p-5">
         <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">{{ ui.personality | default('Personality') }}</h3>
         <p class="text-gray-300">{{ ui.welcome | default("Hi, I'm Neo — your personal assistant.") }}</p>
@@ -353,6 +350,47 @@
 
     // Focus input on load
     chatInput.focus();
+
+    // --- Load live status data ---
+    async function loadStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+
+        // Update stat cards
+        document.getElementById('stat-model').textContent = data.model;
+        document.getElementById('stat-connectors').textContent = data.connectors.length;
+        document.getElementById('stat-flows').textContent = data.flows.length;
+        document.getElementById('stat-channels').textContent = data.channels.length;
+
+        // Populate connectors list
+        const connList = document.getElementById('connectors-list');
+        connList.innerHTML = data.connectors.map(c => `
+          <div class="flex items-center justify-between py-2 border-b border-neo-border last:border-0">
+            <div class="flex items-center gap-2">
+              <div class="w-2 h-2 rounded-full bg-blue-400"></div>
+              <span class="text-sm text-white font-medium">${escapeHtml(c.name)}</span>
+            </div>
+            <span class="text-xs text-gray-500">${c.actions.join(', ')}</span>
+          </div>
+        `).join('');
+
+        // Populate flows list
+        const flowList = document.getElementById('flows-list');
+        flowList.innerHTML = data.flows.map(f => `
+          <div class="flex items-center justify-between py-2 border-b border-neo-border last:border-0">
+            <div class="flex items-center gap-2">
+              <div class="w-2 h-2 rounded-full bg-green-400"></div>
+              <span class="text-sm text-white font-medium">${escapeHtml(f.intent)}</span>
+            </div>
+            <span class="text-xs text-gray-500">${f.slots.join(', ')}</span>
+          </div>
+        `).join('');
+      } catch (e) {
+        console.error('Failed to load status:', e);
+      }
+    }
+    loadStatus();
   </script>
 </body>
 </html>

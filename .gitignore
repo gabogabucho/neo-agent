@@ -31,3 +31,4 @@ Thumbs.db
 
 # User config (contains API keys)
 # ~/.neo/ is the user config dir, not in the repo
+.claude/

@@ -107,10 +107,24 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
 @app.get("/api/status")
 async def api_status():
     """API endpoint for Neo's current status."""
+    flows_info = []
+    if _brain:
+        for flow in _brain.flows:
+            flows_info.append(
+                {
+                    "intent": flow.get("intent", "unknown"),
+                    "triggers": flow.get("triggers", []),
+                    "slots": list(flow.get("slots", {}).keys()),
+                }
+            )
+
     return {
         "status": "active",
+        "version": "0.1.0",
         "model": _config.get("model", "not configured"),
         "language": _config.get("language", "en"),
         "connectors": _brain.connectors.list() if _brain else [],
-        "flows": len(_brain.flows) if _brain else 0,
+        "flows": flows_info,
+        "skills": ["text-responder", "web-search", "file-reader"],
+        "channels": [{"name": "web", "status": "active"}],
     }
