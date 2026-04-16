@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="logo.png" alt="Neo" width="180" />
+  <img src="logo.png" alt="Lumen" width="180" />
 </p>
 
-<h1 align="center">Neo</h1>
+<h1 align="center">Lumen</h1>
 
 <p align="center">
   <strong>Open-source AI agent engine. Modular. No limits.</strong>
@@ -17,14 +17,14 @@
   <a href="#architecture">Architecture</a> &bull;
   <a href="#manifesto">Manifesto</a> &bull;
   <a href="MANIFESTO.md">Full Manifesto</a> &bull;
-  <a href="NEO_SPEC.md">Spec</a>
+  <a href="LUMEN_SPEC.md">Spec</a>
 </p>
 
 ---
 
-## What is Neo?
+## What is Lumen?
 
-Neo is a **downloadable AI agent framework** that works from minute zero. Install it, run it, and you have a working assistant. From there, shape it however you want: change the personality, install modules, connect channels. No code required.
+Lumen is a **downloadable AI agent framework** that works from minute zero. Install it, run it, and you have a working assistant. From there, shape it however you want: change the personality, install modules, connect channels. No code required.
 
 **Not a SaaS. Not a platform. Not a chatbot.** A framework you own.
 
@@ -38,24 +38,24 @@ Neo is a **downloadable AI agent framework** that works from minute zero. Instal
 ## Quickstart
 
 ```bash
-pip install neo-agent
-neo run
+pip install lumen-agent
+lumen run
 ```
 
-That's it. Your browser opens. First time? The setup wizard walks you through language, model, and API key. Then Neo awakens.
+That's it. Your browser opens. First time? The setup wizard walks you through language, model, and API key. Then Lumen awakens.
 
 ### From source
 
 ```bash
-git clone https://github.com/gabogabucho/neo-agent.git
-cd neo-agent
+git clone https://github.com/gabogabucho/lumen-agent.git
+cd lumen-agent
 pip install -e .
-neo run
+lumen run
 ```
 
 ## Architecture
 
-Neo has five layers with clear boundaries:
+Lumen has five layers with clear boundaries:
 
 ```
 CONSCIOUSNESS  — Who I am (immutable soul, the BIOS)
@@ -69,9 +69,9 @@ Each layer has ONE role. No layer knows what doesn't concern it.
 
 ### Self-Awareness
 
-Neo is **conscious** of its own capabilities. At startup, the Discovery system scans all skills, connectors, modules, and channels. Neo knows what it can do, what it can't, and why.
+Lumen is **conscious** of its own capabilities. At startup, the Discovery system scans all skills, connectors, modules, and channels. Lumen knows what it can do, what it can't, and why.
 
-When you ask Neo something it can't do, it doesn't hallucinate — it tells you what's missing and suggests how to extend it.
+When you ask Lumen something it can't do, it doesn't hallucinate — it tells you what's missing and suggests how to extend it.
 
 ### The Brain (~200 lines)
 
@@ -110,14 +110,14 @@ Built-in handlers for task, note, and memory. MCP servers for everything else.
 
 ## Manifesto
 
-> Every architectural decision must pass one test: **does it make Neo simpler AND more extensible?** If it only adds capability without simplicity, it belongs in a module, not in the core.
+> Every architectural decision must pass one test: **does it make Lumen simpler AND more extensible?** If it only adds capability without simplicity, it belongs in a module, not in the core.
 
-Neo does not compete on capability. Neo competes on accessibility.
+Lumen does not compete on capability. Lumen competes on accessibility.
 
 ```
 Hermes: "I can do EVERYTHING."           → But who configures me?
 OpenClaw: "I will be able to do everything." → Someday.
-Neo: "I am. And I can grow."             → Install, use, extend.
+Lumen: "I am. And I can grow."             → Install, use, extend.
 ```
 
 Read the [full manifesto](MANIFESTO.md).
@@ -125,7 +125,7 @@ Read the [full manifesto](MANIFESTO.md).
 ## Project Structure
 
 ```
-neo/
+lumen/
 ├── core/
 │   ├── brain.py          # Context assembler (~200 lines)
 │   ├── consciousness.py  # Immutable identity (the soul)
@@ -143,7 +143,7 @@ neo/
 ├── connectors/           # Built-in connector definitions
 ├── skills/               # Skill definitions (SKILL.md)
 ├── modules/              # Module templates
-└── cli/main.py           # CLI (neo run, neo install, neo status)
+└── cli/main.py           # CLI (lumen run, lumen install, lumen status)
 ```
 
 ## Supported Models

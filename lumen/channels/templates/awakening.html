@@ -11,7 +11,7 @@
 
     body {
       font-family: 'Inter', sans-serif;
-      background: #050a18;
+      background: #020408;
       color: #e5e7eb;
       height: 100vh;
       display: flex;
@@ -21,128 +21,166 @@
       overflow: hidden;
     }
 
-    /* --- Background glow --- */
-    .bg-glow {
+    /* === Phase 1: The Light appears === */
+
+    /* Central light point — the very first thing */
+    .light-origin {
       position: fixed;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      width: 600px;
-      height: 600px;
-      background: radial-gradient(circle, rgba(59,130,246,0.08) 0%, transparent 70%);
+      width: 4px;
+      height: 4px;
+      background: #3b82f6;
+      border-radius: 50%;
       opacity: 0;
-      animation: glowIn 3s ease-out 1s forwards;
+      animation: lightBorn 1.5s ease-out 0.5s forwards;
+      z-index: 5;
     }
 
-    @keyframes glowIn {
-      to { opacity: 1; }
+    @keyframes lightBorn {
+      0% { opacity: 0; width: 4px; height: 4px; box-shadow: none; }
+      50% { opacity: 1; width: 8px; height: 8px; box-shadow: 0 0 30px 10px rgba(59,130,246,0.4); }
+      100% { opacity: 1; width: 6px; height: 6px; box-shadow: 0 0 60px 20px rgba(59,130,246,0.3); }
     }
 
-    /* --- Eye container --- */
+    /* Light expands outward — illuminating the darkness */
+    .light-expand {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 0;
+      height: 0;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(59,130,246,0.15) 0%, rgba(59,130,246,0.05) 40%, transparent 70%);
+      opacity: 0;
+      animation: lightExpand 2.5s ease-out 1.5s forwards;
+      z-index: 1;
+    }
+
+    @keyframes lightExpand {
+      0% { opacity: 0; width: 0; height: 0; }
+      100% { opacity: 1; width: 800px; height: 800px; }
+    }
+
+    /* === Phase 2: The Eye forms around the light === */
+
     .eye-container {
       position: relative;
-      width: 200px;
-      height: 120px;
+      width: 220px;
+      height: 130px;
       margin-bottom: 48px;
+      z-index: 10;
     }
 
-    /* --- Eye SVG --- */
-    .eye-svg {
-      width: 200px;
-      height: 120px;
-    }
+    .eye-svg { width: 220px; height: 130px; }
 
-    /* Eye outline — starts as a thin line, opens into eye shape */
+    /* Eye outline — draws itself AFTER the light appears */
     .eye-outline {
       fill: none;
-      stroke: #cbd5e1;
       stroke-width: 2;
       stroke-linecap: round;
       stroke-linejoin: round;
-      stroke-dasharray: 500;
-      stroke-dashoffset: 500;
-      animation: drawEye 2s ease-out 0.5s forwards;
+      stroke-dasharray: 600;
+      stroke-dashoffset: 600;
     }
+
+    .eye-main {
+      stroke: rgba(203,213,225,0.6);
+      animation: drawEye 2s ease-out 2.5s forwards;
+    }
+
+    .eye-facet {
+      stroke: rgba(71,85,105,0.4);
+      stroke-width: 1;
+    }
+    .eye-facet-1 { animation: drawEye 1.5s ease-out 3s forwards; }
+    .eye-facet-2 { animation: drawEye 1.5s ease-out 3.2s forwards; }
 
     @keyframes drawEye {
       to { stroke-dashoffset: 0; }
     }
 
-    /* Iris — scales up from nothing */
+    /* Iris — the light IS the iris. It was always there. */
+    .eye-iris-glow {
+      fill: #3b82f6;
+      opacity: 0;
+      filter: blur(12px);
+      animation: irisGlow 2s ease-in-out 3.5s infinite;
+    }
+
+    @keyframes irisGlow {
+      0%, 100% { opacity: 0.15; }
+      50% { opacity: 0.4; }
+    }
+
     .eye-iris-outer {
       fill: none;
       stroke: #3b82f6;
       stroke-width: 2;
       opacity: 0;
-      transform-origin: 100px 60px;
+      transform-origin: 110px 65px;
       transform: scale(0);
-      animation: irisReveal 1s ease-out 2s forwards;
+      animation: irisReveal 1.2s ease-out 3.5s forwards;
     }
 
     .eye-iris-inner {
       fill: #3b82f6;
       opacity: 0;
-      transform-origin: 100px 60px;
+      transform-origin: 110px 65px;
       transform: scale(0);
-      animation: irisReveal 0.8s ease-out 2.3s forwards;
+      animation: irisReveal 1s ease-out 3.8s forwards;
     }
 
     @keyframes irisReveal {
+      to { opacity: 0.4; transform: scale(1); }
+    }
+
+    /* Pupil — the deepest point, where light focuses */
+    .eye-pupil {
+      fill: #020408;
+      opacity: 0;
+      transform-origin: 110px 65px;
+      transform: scale(0);
+      animation: pupilReveal 0.6s ease-out 4.1s forwards;
+    }
+
+    @keyframes pupilReveal {
       to { opacity: 1; transform: scale(1); }
     }
 
-    /* Iris pulse glow */
-    .eye-iris-glow {
-      fill: #3b82f6;
-      opacity: 0;
-      filter: blur(8px);
-      animation: irisPulse 2s ease-in-out 3s infinite;
-    }
-
-    @keyframes irisPulse {
-      0%, 100% { opacity: 0.2; }
-      50% { opacity: 0.5; }
-    }
-
-    /* Pupil */
-    .eye-pupil {
-      fill: #050a18;
-      opacity: 0;
-      transform-origin: 100px 60px;
-      transform: scale(0);
-      animation: irisReveal 0.5s ease-out 2.6s forwards;
-    }
-
-    /* Light reflection dots */
+    /* Light reflections — proof that light entered */
     .eye-reflection {
       fill: white;
       opacity: 0;
-      animation: reflectionIn 0.3s ease-out 3s forwards;
     }
+    .reflection-1 { animation: reflectionIn 0.4s ease-out 4.3s forwards; }
+    .reflection-2 { animation: reflectionIn 0.3s ease-out 4.5s forwards; }
 
     @keyframes reflectionIn {
-      to { opacity: 0.8; }
+      to { opacity: 0.85; }
     }
 
-    /* Connection nodes on the eye facets */
+    /* Connection nodes — they glow as light reaches them */
     .eye-node {
-      fill: white;
+      fill: #3b82f6;
       opacity: 0;
-      animation: nodeAppear 0.4s ease-out forwards;
+      filter: blur(0);
+    }
+    .node-1 { animation: nodeLit 0.5s ease-out 4.6s forwards; }
+    .node-2 { animation: nodeLit 0.5s ease-out 4.8s forwards; }
+    .node-3 { animation: nodeLit 0.5s ease-out 5.0s forwards; }
+    .node-4 { animation: nodeLit 0.5s ease-out 5.2s forwards; }
+
+    @keyframes nodeLit {
+      0% { opacity: 0; r: 0; }
+      50% { opacity: 1; r: 5; filter: blur(2px); }
+      100% { opacity: 0.8; r: 3; filter: blur(0); }
     }
 
-    .eye-node:nth-child(1) { animation-delay: 2.8s; }
-    .eye-node:nth-child(2) { animation-delay: 3.0s; }
-    .eye-node:nth-child(3) { animation-delay: 3.2s; }
-    .eye-node:nth-child(4) { animation-delay: 3.4s; }
+    /* === Phase 3: Identity === */
 
-    @keyframes nodeAppear {
-      0% { opacity: 0; transform: scale(0); }
-      50% { opacity: 1; transform: scale(1.5); }
-      100% { opacity: 0.9; transform: scale(1); }
-    }
-
-    /* --- Text elements --- */
     .awakening-text {
       text-align: center;
       position: relative;
@@ -150,66 +188,75 @@
     }
 
     .text-iam {
-      font-size: 32px;
+      font-size: 36px;
       font-weight: 200;
-      letter-spacing: 0.1em;
+      letter-spacing: 0.12em;
       opacity: 0;
       transform: translateY(10px);
-      animation: textFade 1.5s ease-out 3.5s forwards;
+      animation: textFade 1.8s ease-out 5.5s forwards;
     }
 
     .text-iam span {
       font-weight: 600;
       color: #3b82f6;
+      text-shadow: 0 0 30px rgba(59,130,246,0.4);
     }
 
     @keyframes textFade {
       to { opacity: 1; transform: translateY(0); }
     }
 
-    /* --- Discovery feed --- */
+    /* === Phase 4: Discovery (light illuminates each capability) === */
+
     .discovery-feed {
       margin-top: 40px;
       text-align: center;
-      min-height: 120px;
+      min-height: 140px;
+      z-index: 10;
+      position: relative;
     }
 
     .discovery-line {
       font-size: 14px;
       font-weight: 300;
-      color: #9ca3af;
+      color: #6b7280;
       opacity: 0;
       transform: translateY(8px);
       transition: all 0.6s ease-out;
-      margin: 8px 0;
+      margin: 10px 0;
     }
 
     .discovery-line.visible {
       opacity: 1;
       transform: translateY(0);
+      color: #9ca3af;
     }
 
     .discovery-line .count {
       color: #3b82f6;
       font-weight: 600;
+      text-shadow: 0 0 8px rgba(59,130,246,0.3);
     }
 
-    .discovery-line .status-dot {
+    /* Light pulse dot before each discovery line */
+    .light-dot {
       display: inline-block;
       width: 6px;
       height: 6px;
       border-radius: 50%;
       background: #3b82f6;
-      margin-right: 8px;
-      animation: dotPulse 1s ease-in-out infinite;
+      margin-right: 10px;
+      box-shadow: 0 0 8px 2px rgba(59,130,246,0.4);
+      animation: lightDotPulse 1.5s ease-in-out infinite;
     }
 
-    @keyframes dotPulse {
-      0%, 100% { opacity: 0.4; }
-      50% { opacity: 1; }
+    @keyframes lightDotPulse {
+      0%, 100% { opacity: 0.4; box-shadow: 0 0 4px 1px rgba(59,130,246,0.2); }
+      50% { opacity: 1; box-shadow: 0 0 12px 4px rgba(59,130,246,0.5); }
     }
 
-    /* --- Ready state --- */
+    /* === Phase 5: Ready === */
+
     .ready-text {
       font-size: 16px;
       font-weight: 300;
@@ -217,16 +264,18 @@
       opacity: 0;
       margin-top: 32px;
       letter-spacing: 0.05em;
+      text-shadow: 0 0 20px rgba(16,185,129,0.3);
+      z-index: 10;
+      position: relative;
     }
 
     .ready-text.visible {
       animation: textFade 1s ease-out forwards;
     }
 
-    /* --- Enter button --- */
     .enter-btn {
       margin-top: 32px;
-      padding: 12px 32px;
+      padding: 14px 36px;
       background: #3b82f6;
       color: white;
       border: none;
@@ -238,7 +287,10 @@
       opacity: 0;
       transform: translateY(10px);
       transition: all 0.3s ease;
-      letter-spacing: 0.02em;
+      letter-spacing: 0.03em;
+      z-index: 10;
+      position: relative;
+      box-shadow: 0 0 20px rgba(59,130,246,0.2);
     }
 
     .enter-btn.visible {
@@ -247,74 +299,69 @@
 
     .enter-btn:hover {
       background: #2563eb;
-      transform: translateY(-1px);
-      box-shadow: 0 8px 30px rgba(59,130,246,0.3);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 30px rgba(59,130,246,0.4);
     }
 
-    /* --- Transition out --- */
+    /* === Transition out — light fades === */
+
     .fade-out {
-      animation: fadeOut 0.8s ease-in forwards;
+      animation: fadeOut 1s ease-in forwards;
     }
 
     @keyframes fadeOut {
-      to { opacity: 0; transform: scale(1.02); }
+      to { opacity: 0; }
     }
   </style>
 </head>
 <body>
-  <div class="bg-glow"></div>
+  <!-- Phase 1: Light appears first — before anything else -->
+  <div class="light-origin"></div>
+  <div class="light-expand"></div>
 
-  <!-- The Eye -->
+  <!-- Phase 2: The Eye forms around the light -->
   <div class="eye-container">
-    <svg class="eye-svg" viewBox="0 0 200 120">
-      <!-- Eye outline (faceted) -->
-      <path class="eye-outline"
-        d="M10,60 Q40,15 100,10 Q160,15 190,60 Q160,105 100,110 Q40,105 10,60 Z" />
+    <svg class="eye-svg" viewBox="0 0 220 130">
+      <!-- Eye outline forms around the light -->
+      <path class="eye-outline eye-main"
+        d="M10,65 Q45,15 110,10 Q175,15 210,65 Q175,115 110,120 Q45,115 10,65 Z" />
 
-      <!-- Inner facet lines -->
-      <path class="eye-outline" style="animation-delay: 1s; stroke-width: 1; stroke: #475569;"
-        d="M30,60 Q60,28 100,22 Q140,28 170,60" />
-      <path class="eye-outline" style="animation-delay: 1.2s; stroke-width: 1; stroke: #475569;"
-        d="M30,60 Q60,92 100,98 Q140,92 170,60" />
+      <!-- Inner facets -->
+      <path class="eye-outline eye-facet eye-facet-1"
+        d="M35,65 Q65,30 110,24 Q155,30 185,65" />
+      <path class="eye-outline eye-facet eye-facet-2"
+        d="M35,65 Q65,100 110,106 Q155,100 185,65" />
 
-      <!-- Iris glow (blur behind) -->
-      <circle class="eye-iris-glow" cx="100" cy="60" r="28" />
+      <!-- The iris IS the light — it was always there -->
+      <circle class="eye-iris-glow" cx="110" cy="65" r="30" />
+      <circle class="eye-iris-outer" cx="110" cy="65" r="30" />
+      <circle class="eye-iris-inner" cx="110" cy="65" r="22" />
 
-      <!-- Iris outer -->
-      <circle class="eye-iris-outer" cx="100" cy="60" r="28" />
+      <!-- Pupil — where light focuses -->
+      <circle class="eye-pupil" cx="110" cy="65" r="10" />
 
-      <!-- Iris inner pattern (starburst) -->
-      <circle class="eye-iris-inner" cx="100" cy="60" r="20" opacity="0.3" />
+      <!-- Light reflections -->
+      <circle class="eye-reflection reflection-1" cx="100" cy="56" r="4" />
+      <circle class="eye-reflection reflection-2" cx="118" cy="52" r="2" />
 
-      <!-- Pupil -->
-      <circle class="eye-pupil" cx="100" cy="60" r="10" />
-
-      <!-- Light reflection -->
-      <circle class="eye-reflection" cx="90" cy="52" r="4" />
-      <circle class="eye-reflection" cx="108" cy="48" r="2" style="animation-delay: 3.1s;" />
-
-      <!-- Connection nodes on facets -->
-      <g>
-        <circle class="eye-node" cx="55" cy="30" r="3" />
-        <circle class="eye-node" cx="145" cy="30" r="3" />
-        <circle class="eye-node" cx="100" cy="10" r="3" />
-        <circle class="eye-node" cx="100" cy="110" r="3" />
-      </g>
+      <!-- Nodes glow as light reaches them -->
+      <circle class="eye-node node-1" cx="60" cy="32" r="0" />
+      <circle class="eye-node node-2" cx="160" cy="32" r="0" />
+      <circle class="eye-node node-3" cx="110" cy="10" r="0" />
+      <circle class="eye-node node-4" cx="110" cy="120" r="0" />
     </svg>
   </div>
 
-  <!-- "I am Lumen." -->
+  <!-- Phase 3: Identity -->
   <div class="awakening-text">
     <div class="text-iam">I am <span>Lumen</span>.</div>
   </div>
 
-  <!-- Discovery feed -->
+  <!-- Phase 4: Discovery — each line is light illuminating a capability -->
   <div class="discovery-feed" id="discovery-feed"></div>
 
-  <!-- Ready -->
+  <!-- Phase 5: Ready -->
   <div class="ready-text" id="ready-text">Lumen is ready.</div>
-
-  <!-- Enter -->
   <button class="enter-btn" id="enter-btn" onclick="enterDashboard()">
     Enter Dashboard &rarr;
   </button>
@@ -329,7 +376,7 @@
         setTimeout(() => {
           const line = document.createElement('div');
           line.className = 'discovery-line';
-          line.innerHTML = `<span class="status-dot"></span>${text}`;
+          line.innerHTML = `<span class="light-dot"></span>${text}`;
           feed.appendChild(line);
           requestAnimationFrame(() => line.classList.add('visible'));
           resolve();
@@ -338,50 +385,45 @@
     }
 
     async function runDiscovery() {
-      // Fetch real data from API
       let data = null;
       try {
         const res = await fetch('/api/status');
         data = await res.json();
-      } catch (e) {
-        // Fallback if API not ready yet
-      }
+      } catch (e) {}
 
       // Wait for eye animation to complete
-      await new Promise(r => setTimeout(r, 4500));
+      await new Promise(r => setTimeout(r, 6500));
 
-      // Discovery sequence — show real data
       const caps = data?.capabilities || [];
       const skills = caps.filter(c => c.kind === 'skill');
       const connectors = caps.filter(c => c.kind === 'connector');
+      const readyConns = connectors.filter(c => c.status === 'ready');
       const channels = caps.filter(c => c.kind === 'channel');
-      const ready = caps.filter(c => c.status === 'ready');
       const gaps = caps.filter(c => c.status !== 'ready');
 
-      await addDiscoveryLine(`Scanning consciousness...`, 0);
-      await addDiscoveryLine(`Identity loaded: <span class="count">Neo</span>, Modular AI Agent`, 800);
-      await addDiscoveryLine(`Discovering capabilities...`, 1000);
-      await addDiscoveryLine(`<span class="count">${skills.length}</span> skills discovered`, 800);
-      await addDiscoveryLine(`<span class="count">${connectors.length}</span> connectors loaded (<span class="count">${connectors.filter(c => c.status === 'ready').length}</span> ready)`, 600);
-      await addDiscoveryLine(`<span class="count">${channels.length}</span> channel active`, 600);
+      // Each discovery is a beam of light illuminating something
+      await addDiscoveryLine(`Illuminating consciousness...`, 0);
+      await addDiscoveryLine(`Identity: <span class="count">Lumen</span>, Modular AI Agent`, 900);
+      await addDiscoveryLine(`Scanning body...`, 800);
+      await addDiscoveryLine(`<span class="count">${skills.length}</span> skills illuminated`, 700);
+      await addDiscoveryLine(`<span class="count">${connectors.length}</span> connectors found (<span class="count">${readyConns.length}</span> active)`, 600);
+      await addDiscoveryLine(`<span class="count">${channels.length}</span> channel online`, 500);
 
       if (gaps.length > 0) {
-        await addDiscoveryLine(`<span class="count">${gaps.length}</span> capabilities pending — extensible`, 600);
+        await addDiscoveryLine(`<span class="count">${gaps.length}</span> dark spots — awaiting light`, 500);
       }
 
-      // Model
       if (data?.model) {
         await addDiscoveryLine(`Model: <span class="count">${data.model}</span>`, 500);
       }
 
       // Ready
-      await new Promise(r => setTimeout(r, 800));
+      await new Promise(r => setTimeout(r, 1000));
       readyText.classList.add('visible');
 
-      await new Promise(r => setTimeout(r, 600));
+      await new Promise(r => setTimeout(r, 700));
       enterBtn.classList.add('visible');
 
-      // Mark awakening as complete
       try {
         await fetch('/api/awakened', { method: 'POST' });
       } catch (e) {}
@@ -389,12 +431,9 @@
 
     function enterDashboard() {
       document.body.classList.add('fade-out');
-      setTimeout(() => {
-        window.location.href = '/dashboard';
-      }, 800);
+      setTimeout(() => { window.location.href = '/dashboard'; }, 1000);
     }
 
-    // Start the sequence
     runDiscovery();
   </script>
 </body>

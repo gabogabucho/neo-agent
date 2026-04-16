@@ -1,14 +1,14 @@
-# NEO — Manifesto
+# LUMEN — Manifesto
 
 > "Soy. Y puedo crecer."
 
 ---
 
-## What Neo IS
+## What Lumen IS
 
-Neo is an open-source AI agent engine. You install it, it works. From there you shape it however you want: change the personality, install modules, connect channels. No code. No limits.
+Lumen is an open-source AI agent engine. You install it, it works. From there you shape it however you want: change the personality, install modules, connect channels. No code. No limits.
 
-Neo is NOT a SaaS. NOT a platform. NOT a chatbot. It is a downloadable framework that works from minute zero.
+Lumen is NOT a SaaS. NOT a platform. NOT a chatbot. It is a downloadable framework that works from minute zero.
 
 **Analogy: WordPress for AI agents.**
 
@@ -16,15 +16,15 @@ Neo is NOT a SaaS. NOT a platform. NOT a chatbot. It is a downloadable framework
 
 ## Core Principle: Consciousness Over Capability
 
-Neo does not compete on capability. Neo competes on accessibility.
+Lumen does not compete on capability. Lumen competes on accessibility.
 
 ```
 Hermes: "I can do EVERYTHING."      → But who configures me?
 OpenClaw: "I will be able to do everything." → Someday.
-Neo: "I am. And I can grow."        → Install, use, extend.
+Lumen: "I am. And I can grow."        → Install, use, extend.
 ```
 
-Neo is as basic as you want and as complex as you need. The default Neo answers questions and manages tasks. With modules, it becomes a barbershop assistant, a restaurant booking agent, or an e-commerce support bot. The power is in the extension, not the core.
+Lumen is as basic as you want and as complex as you need. The default Lumen answers questions and manages tasks. With modules, it becomes a barbershop assistant, a restaurant booking agent, or an e-commerce support bot. The power is in the extension, not the core.
 
 ---
 
@@ -35,17 +35,17 @@ Each layer has ONE role. No layer knows what doesn't concern it.
 ```
 ┌─────────────────────────────────────────────────┐
 │  CONSCIOUSNESS (soul — immutable)               │
-│  WHO Neo is. Never changes. The BIOS.           │
+│  WHO Lumen is. Never changes. The BIOS.           │
 ├─────────────────────────────────────────────────┤
 │  PERSONALITY (context identity — swappable)     │
-│  WHO Neo is in THIS context. Changes per module.│
+│  WHO Lumen is in THIS context. Changes per module.│
 ├─────────────────────────────────────────────────┤
 │  BODY (capabilities — discovered at startup)    │
-│  WHAT Neo has. Skills, connectors, channels.    │
+│  WHAT Lumen has. Skills, connectors, channels.    │
 │  Changes when you install or remove things.     │
 ├─────────────────────────────────────────────────┤
 │  BRAIN (mind — context assembler)               │
-│  HOW Neo thinks. Combines all layers into a     │
+│  HOW Lumen thinks. Combines all layers into a     │
 │  prompt, lets the LLM decide, executes actions. │
 ├─────────────────────────────────────────────────┤
 │  MEMORY (experience — persistent)               │
@@ -66,9 +66,9 @@ Each layer has ONE role. No layer knows what doesn't concern it.
 
 ## The Self-Declaration Contract
 
-**If Neo doesn't know something exists, it doesn't exist.**
+**If Lumen doesn't know something exists, it doesn't exist.**
 
-Every extension — skill, connector, module, channel, MCP server — MUST self-declare with a manifest that tells Neo:
+Every extension — skill, connector, module, channel, MCP server — MUST self-declare with a manifest that tells Lumen:
 
 1. **What it is** (kind, name, description)
 2. **What it provides** (capabilities it adds)
@@ -76,15 +76,15 @@ Every extension — skill, connector, module, channel, MCP server — MUST self-
 4. **What LLM tier it recommends** (tier-1, tier-2, tier-3 — advisory, not enforced)
 5. **Its current status** (ready, available, no_handler, missing_deps, error)
 
-At startup, the Discovery system scans everything, parses manifests, and populates the Body (registry). The Brain then uses the Body to tell the LLM exactly what Neo can and cannot do.
+At startup, the Discovery system scans everything, parses manifests, and populates the Body (registry). The Brain then uses the Body to tell the LLM exactly what Lumen can and cannot do.
 
-If a user asks for something Neo cannot do, Neo knows WHY it can't and can suggest how to extend itself. This is consciousness — not just intelligence, but self-awareness.
+If a user asks for something Lumen cannot do, Lumen knows WHY it can't and can suggest how to extend itself. This is consciousness — not just intelligence, but self-awareness.
 
 ---
 
 ## Skills Are Instructions, Not Code
 
-Skills in Neo are markdown files with YAML frontmatter. They are prompt-injected instructions that the LLM reads — NOT executable code.
+Skills in Lumen are markdown files with YAML frontmatter. They are prompt-injected instructions that the LLM reads — NOT executable code.
 
 ```yaml
 # skills/appointment-booking/SKILL.md
@@ -121,7 +121,7 @@ Hermes has 5 layers between a tool call and its result:
 Tool → handler → schema → registry → dispatch → result
 ```
 
-Neo has 3:
+Lumen has 3:
 ```
 Connector → action → result
 ```
@@ -129,13 +129,13 @@ Connector → action → result
 Connectors are logical actions. They can be backed by:
 - **Built-in handlers** (Python functions for task, note, memory)
 - **MCP servers** (external processes, connected via stdio)
-- **Nothing yet** (declared but no handler — Neo knows it's a gap)
+- **Nothing yet** (declared but no handler — Lumen knows it's a gap)
 
 ---
 
 ## Flows Are Slots, Not Sequences
 
-Conversation flows in Neo are slot-based, not linear step sequences. The flow defines WHAT information is needed, not the order in which it's collected.
+Conversation flows in Lumen are slot-based, not linear step sequences. The flow defines WHAT information is needed, not the order in which it's collected.
 
 ```yaml
 slots:
@@ -150,17 +150,17 @@ on_complete: [calendar__create]
 interruption_policy: "answer_and_resume"
 ```
 
-The LLM fills slots from each message. If the user gives two pieces of information at once, both slots fill. If the user goes off-topic, Neo answers and returns to the pending slot. The flow is a MAP of what's missing, not a state machine.
+The LLM fills slots from each message. If the user gives two pieces of information at once, both slots fill. If the user goes off-topic, Lumen answers and returns to the pending slot. The flow is a MAP of what's missing, not a state machine.
 
 ---
 
-## How Neo Differs From Hermes
+## How Lumen Differs From Hermes
 
 Hermes is a wild, incredibly capable horse. It can do everything — program its own tools on the fly, manage 40+ tools, run parallel executions with path overlap detection, implement OAuth MCP with circuit breakers. It is the most capable open-source agent framework.
 
 **But capability is Hermes's problem.** If you want it to answer WhatsApp messages for a barbershop, you need an engineer to tame it.
 
-| Aspect | Hermes | Neo |
+| Aspect | Hermes | Lumen |
 |--------|--------|-----|
 | Philosophy | Maximum capability | Conscious simplicity |
 | Tools | 40+, self-programming, 5-layer dispatch | 6 built-in connectors, 3-layer dispatch |
@@ -170,24 +170,24 @@ Hermes is a wild, incredibly capable horse. It can do everything — program its
 | Default state | Powerful but complex | Simple but extensible |
 | Self-awareness | Knows its tools | Knows its tools AND its gaps |
 
-**What Neo takes from Hermes:**
+**What Lumen takes from Hermes:**
 - MCP tools in the same registry as built-in connectors (the agent doesn't care where a tool comes from)
 - Arg coercion (LLMs send wrong types — coerce before dispatch)
 - Progressive disclosure (don't dump all tools into the prompt)
 
-**What Neo does NOT take from Hermes:**
-- Self-programming tools (Neo extends via modules, not self-modification)
-- Plugin hooks with execution strategies (overengineering for Neo's scope)
+**What Lumen does NOT take from Hermes:**
+- Self-programming tools (Lumen extends via modules, not self-modification)
+- Plugin hooks with execution strategies (overengineering for Lumen's scope)
 - OAuth MCP, circuit breakers, parallel execution with overlap detection
 - 5-layer dispatch architecture
 
 ---
 
-## How Neo Differs From OpenClaw
+## How Lumen Differs From OpenClaw
 
 OpenClaw has the right concepts — SOUL.md for personality, skills as markdown, heartbeat for proactive tasks. But it needs significant iteration to become functional, and has persistent memory problems.
 
-| Aspect | OpenClaw | Neo |
+| Aspect | OpenClaw | Lumen |
 |--------|----------|-----|
 | Philosophy | Right ideas, not yet landed | Ship what works, extend later |
 | Skills | Markdown instructions (good!) but complex plugin system | Markdown instructions, simple manifest contract |
@@ -197,21 +197,21 @@ OpenClaw has the right concepts — SOUL.md for personality, skills as markdown,
 | State | Not fully functional | Functional MVP |
 | Self-awareness | No explicit concept | Core architectural principle |
 
-**What Neo takes from OpenClaw:**
+**What Lumen takes from OpenClaw:**
 - Skills as prompt-injected markdown (not code — the LLM reads them)
 - Skill eligibility in frontmatter (declares what it needs to work)
 
-**What Neo does NOT take from OpenClaw:**
+**What Lumen does NOT take from OpenClaw:**
 - TypeScript plugin system with void/modifying/claiming hooks
 - Trigger-based activation planning
 - Complex command registration with auth checks
-- Bidirectional MCP (Neo is a consumer, not a server)
+- Bidirectional MCP (Lumen is a consumer, not a server)
 
 ---
 
 ## The WordPress Analogy (Revisited)
 
-| WordPress | Neo |
+| WordPress | Lumen |
 |-----------|-----|
 | Install → working blog | Install → working assistant |
 | Change theme → different look | Change personality → different behavior |
@@ -223,13 +223,13 @@ OpenClaw has the right concepts — SOUL.md for personality, skills as markdown,
 | functions.php | SKILL.md |
 | wp-config.php | consciousness.yaml |
 
-The integrator is the "web designer of the 2000s." They charge to configure Neo for their client. The client doesn't know what Neo is — they just know they have an assistant that works.
+The integrator is the "web designer of the 2000s." They charge to configure Lumen for their client. The client doesn't know what Lumen is — they just know they have an assistant that works.
 
 ---
 
 ## Capability Tiers (Advisory, Not Enforced)
 
-Every capability declares a recommended LLM tier. Neo warns but never blocks.
+Every capability declares a recommended LLM tier. Lumen warns but never blocks.
 
 | Tier | Capability | Reference Models |
 |------|-----------|-----------------|
@@ -241,19 +241,19 @@ The default template works with ANY model (tier-1). Modules with flows need tier
 
 ---
 
-## Install = Neo Knows. Uninstall = Neo Forgets.
+## Install = Lumen Knows. Uninstall = Lumen Forgets.
 
 No restart. No config editing. No noise.
 
-When you install a module, the Discovery system re-runs and Neo becomes aware of the new capability. When you uninstall, the capability disappears from consciousness as if it never existed. One click. No ceremony.
+When you install a module, the Discovery system re-runs and Lumen becomes aware of the new capability. When you uninstall, the capability disappears from consciousness as if it never existed. One click. No ceremony.
 
-This applies to everything: modules, skills, connectors, channels. If it self-declares, Neo knows. If it's removed, Neo forgets.
+This applies to everything: modules, skills, connectors, channels. If it self-declares, Lumen knows. If it's removed, Lumen forgets.
 
-Neo also acts as its own module advisor. When it can't fulfill a request, it searches the module catalog, finds what fills the gap, and recommends installing it:
+Lumen also acts as its own module advisor. When it can't fulfill a request, it searches the module catalog, finds what fills the gap, and recommends installing it:
 
 ```
 User: "Remind me to call Maria at 3pm"
-Neo:  "I can't set reminders yet — I don't have that capability.
+Lumen:  "I can't set reminders yet — I don't have that capability.
        But the Scheduler module can add reminders.
        You can install it from the Modules panel in the dashboard."
 ```
@@ -266,32 +266,32 @@ This is the WordPress model: "You need this plugin. Install it?" — one click.
 
 In most agent frameworks, channels (WhatsApp, Telegram) are external gateways the agent doesn't know about. Each conversation is a "restarted agent" with no continuity or shared identity.
 
-In Neo, channels are capabilities in the Body. They self-declare like everything else. Neo KNOWS it can speak through WhatsApp, Telegram, and the web — because those channels are registered in its Body.
+In Lumen, channels are capabilities in the Body. They self-declare like everything else. Lumen KNOWS it can speak through WhatsApp, Telegram, and the web — because those channels are registered in its Body.
 
 This means:
 
 ```
 Web dashboard ──┐
-WhatsApp ───────┤── SAME Neo, SAME memory, SAME personality
+WhatsApp ───────┤── SAME Lumen, SAME memory, SAME personality
 Telegram ───────┘
 ```
 
-The user who talks to Neo on WhatsApp talks to the SAME Neo as the one on the web dashboard. Memory persists. Identity is one. Channels are mouths — the brain, consciousness, and memory are shared.
+The user who talks to Lumen on WhatsApp talks to the SAME Lumen as the one on the web dashboard. Memory persists. Identity is one. Channels are mouths — the brain, consciousness, and memory are shared.
 
 ---
 
-## What Neo Will Never Be
+## What Lumen Will Never Be
 
-- Neo will never self-program its own tools at runtime.
-- Neo will never require an engineer to configure for basic use.
-- Neo will never sacrifice simplicity for capability.
-- Neo will never have a core larger than what fits in one developer's head.
-- Neo will never lock users into a specific LLM provider.
-- Neo will never be a SaaS or require a subscription to function.
+- Lumen will never self-program its own tools at runtime.
+- Lumen will never require an engineer to configure for basic use.
+- Lumen will never sacrifice simplicity for capability.
+- Lumen will never have a core larger than what fits in one developer's head.
+- Lumen will never lock users into a specific LLM provider.
+- Lumen will never be a SaaS or require a subscription to function.
 
 ---
 
-## What Neo Will Always Be
+## What Lumen Will Always Be
 
 - Open source (MIT license, forever).
 - Functional from minute zero.
@@ -302,4 +302,4 @@ The user who talks to Neo on WhatsApp talks to the SAME Neo as the one on the we
 
 ---
 
-*This manifesto is the north star. Every architectural decision, every feature, every refactor must pass one test: does it make Neo simpler AND more extensible? If it only adds capability without simplicity, it belongs in a module, not in the core.*
+*This manifesto is the north star. Every architectural decision, every feature, every refactor must pass one test: does it make Lumen simpler AND more extensible? If it only adds capability without simplicity, it belongs in a module, not in the core.*
