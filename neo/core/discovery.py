@@ -34,7 +34,18 @@ def discover_all(
     mcp_config: dict | None = None,
 ) -> Registry:
     """Run full discovery and populate the registry."""
+    # Built-in skills
     _discover_skills(registry, pkg_dir / "skills")
+
+    # Skills inside installed modules (each module can have a SKILL.md)
+    modules_dir = pkg_dir / "modules"
+    if modules_dir.exists():
+        for module_dir in modules_dir.iterdir():
+            if module_dir.is_dir() and not module_dir.name.startswith("_"):
+                skill_file = module_dir / "SKILL.md"
+                if skill_file.exists():
+                    _discover_skill_file(registry, skill_file, module_dir.name)
+
     _discover_connectors(registry, connectors)
     _discover_modules(registry, pkg_dir / "modules")
     _discover_channels(registry, active_channels or ["web"])
@@ -43,6 +54,32 @@ def discover_all(
         _discover_mcps(registry, mcp_config)
 
     return registry
+
+
+def _discover_skill_file(registry: Registry, skill_file: Path, fallback_name: str):
+    """Discover a single SKILL.md file."""
+    try:
+        frontmatter = _parse_frontmatter(skill_file)
+        name = frontmatter.get("name", fallback_name)
+
+        # Don't register if already exists (built-in takes priority)
+        if registry.get(CapabilityKind.SKILL, name):
+            return
+
+        registry.register(
+            Capability(
+                kind=CapabilityKind.SKILL,
+                name=name,
+                description=frontmatter.get("description", ""),
+                status=CapabilityStatus.READY,
+                provides=frontmatter.get("provides", []),
+                requires=frontmatter.get("requires", {}),
+                min_capability=frontmatter.get("min_capability", "tier-1"),
+                metadata={"level": frontmatter.get("level", 1), "path": str(skill_file)},
+            )
+        )
+    except Exception:
+        pass
 
 
 def _discover_skills(registry: Registry, skills_dir: Path):

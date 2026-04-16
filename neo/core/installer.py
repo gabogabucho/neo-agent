@@ -74,45 +74,53 @@ class Installer:
     def install_from_catalog(self, name: str) -> dict:
         """Install a module from the catalog.
 
-        For now, creates the module directory with manifest and skill files.
-        Future: download from remote registry.
+        If the module has real files in catalog/modules/{name}/, copy them.
+        Otherwise, generate manifest + SKILL.md from catalog metadata.
         """
         if self.is_installed(name):
             return {"status": "already_installed", "name": name}
 
-        # Get module info from catalog
         module_info = self.catalog.get(name)
         if not module_info:
             return {"status": "not_found", "name": name}
 
-        # Create module directory
         module_dir = self.installed_dir / name
         module_dir.mkdir(parents=True, exist_ok=True)
 
-        # Write manifest
-        manifest = {
-            "name": module_info["name"],
-            "display_name": module_info.get("display_name", name),
-            "description": module_info.get("description", ""),
-            "version": module_info.get("version", "1.0.0"),
-            "author": module_info.get("author", ""),
-            "price": module_info.get("price", "free"),
-            "min_capability": module_info.get("min_capability", "tier-1"),
-            "provides": module_info.get("provides", []),
-            "tags": module_info.get("tags", []),
-        }
-        with open(module_dir / "manifest.yaml", "w", encoding="utf-8") as f:
-            yaml.dump(manifest, f, default_flow_style=False)
+        # Check if real module files exist in catalog/modules/
+        catalog_module_dir = self.pkg_dir / "catalog" / "modules" / name
+        if catalog_module_dir.exists():
+            # Copy real module files
+            for src_file in catalog_module_dir.rglob("*"):
+                if src_file.is_file():
+                    relative = src_file.relative_to(catalog_module_dir)
+                    dest = module_dir / relative
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src_file, dest)
+        else:
+            # Generate from catalog metadata
+            manifest = {
+                "name": module_info["name"],
+                "display_name": module_info.get("display_name", name),
+                "description": module_info.get("description", ""),
+                "version": module_info.get("version", "1.0.0"),
+                "author": module_info.get("author", ""),
+                "price": module_info.get("price", "free"),
+                "min_capability": module_info.get("min_capability", "tier-1"),
+                "provides": module_info.get("provides", []),
+                "tags": module_info.get("tags", []),
+            }
+            with open(module_dir / "manifest.yaml", "w", encoding="utf-8") as f:
+                yaml.dump(manifest, f, default_flow_style=False)
 
-        # Write a default SKILL.md for the module
-        skill_content = self._generate_skill_md(module_info)
-        (module_dir / "SKILL.md").write_text(skill_content, encoding="utf-8")
+            skill_content = self._generate_skill_md(module_info)
+            (module_dir / "SKILL.md").write_text(skill_content, encoding="utf-8")
 
         return {
             "status": "installed",
             "name": name,
-            "display_name": manifest["display_name"],
-            "description": manifest["description"],
+            "display_name": module_info.get("display_name", name),
+            "description": module_info.get("description", ""),
         }
 
     def install_from_zip(self, zip_data: bytes) -> dict:

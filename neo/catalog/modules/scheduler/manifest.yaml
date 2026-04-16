@@ -1,0 +1,14 @@
+name: scheduler
+display_name: "Scheduler"
+description: "Schedule reminders and recurring tasks. Neo can remind you of things at specific times."
+version: 1.0.0
+author: "Neo Team"
+price: free
+min_capability: tier-2
+provides:
+  - scheduler.create
+  - scheduler.list
+  - scheduler.cancel
+requires:
+  connectors: [task, memory]
+tags: [productivity, time, reminders]
