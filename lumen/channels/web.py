@@ -235,11 +235,32 @@ async def mark_awakened_endpoint():
     return {"status": "ok"}
 
 
+@app.get("/api/history/{session_id}")
+async def api_history(session_id: str):
+    """Load conversation history for a session from persistent memory."""
+    if not _brain:
+        return {"messages": []}
+    try:
+        messages = await _brain.memory.load_conversation(session_id, limit=50)
+        return {"messages": messages}
+    except Exception:
+        return {"messages": []}
+
+
 @app.websocket("/ws/{session_id}")
 async def websocket_chat(websocket: WebSocket, session_id: str):
     """Real-time chat via WebSocket."""
     await websocket.accept()
     session = session_manager.get_or_create(session_id)
+
+    # Hydrate session from persistent memory if empty (reconnect/refresh)
+    if not session.history and _brain:
+        try:
+            stored = await _brain.memory.load_conversation(session_id, limit=50)
+            for msg in stored:
+                session.add_message(msg["role"], msg["content"])
+        except Exception:
+            pass
 
     try:
         while True:

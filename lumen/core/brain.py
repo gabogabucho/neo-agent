@@ -156,9 +156,21 @@ class Brain:
         # 6. Tool use loop — if LLM called tools, execute and send results back
         result = await self._tool_use_loop(response, messages, tools)
 
-        # 7. Update session history
+        # 7. Update session history (RAM) + persistent memory (SQLite)
         session.add_message("user", message)
         session.add_message("assistant", result["message"])
+
+        # Persist conversation to SQLite — survives refresh and restart
+        try:
+            await self.memory.save_conversation_turn(
+                session.session_id, "user", message
+            )
+            if result["message"]:
+                await self.memory.save_conversation_turn(
+                    session.session_id, "assistant", result["message"]
+                )
+        except Exception:
+            pass  # Don't fail the response if persistence fails
 
         return result
 

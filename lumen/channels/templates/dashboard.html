@@ -292,14 +292,36 @@
     }
 
     // --- WebSocket Chat ---
-    const sessionId = crypto.randomUUID();
+    // Persistent session ID — survives page refresh
+    const STORAGE_KEY = 'lumen_session_id';
+    let sessionId = localStorage.getItem(STORAGE_KEY);
+    if (!sessionId) {
+      sessionId = crypto.randomUUID();
+      localStorage.setItem(STORAGE_KEY, sessionId);
+    }
+
     const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${wsProtocol}//${location.host}/ws/${sessionId}`);
+    let ws = new WebSocket(`${wsProtocol}//${location.host}/ws/${sessionId}`);
 
     const chatMessages = document.getElementById('chat-messages');
     const chatForm = document.getElementById('chat-form');
     const chatInput = document.getElementById('chat-input');
     const typingIndicator = document.getElementById('typing-indicator');
+
+    // Load conversation history on connect
+    async function loadHistory() {
+      try {
+        const res = await fetch(`/api/history/${sessionId}`);
+        const data = await res.json();
+        if (data.messages && data.messages.length > 0) {
+          // Remove the default welcome message if we have history
+          const welcome = chatMessages.querySelector('.fade-in');
+          if (welcome) welcome.remove();
+          data.messages.forEach(m => addMessage(m.role, m.content));
+        }
+      } catch (e) {}
+    }
+    loadHistory();
 
     function addMessage(role, content) {
       const wrapper = document.createElement('div');

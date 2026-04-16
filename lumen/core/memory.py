@@ -136,6 +136,33 @@ class Memory:
         await self._db.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
         await self._db.commit()
 
+    async def save_conversation_turn(
+        self, session_id: str, role: str, content: str
+    ):
+        """Save a conversation turn to persistent storage."""
+        await self.remember(
+            content,
+            category=f"conversation:{session_id}",
+            metadata={"role": role, "session_id": session_id},
+        )
+
+    async def load_conversation(
+        self, session_id: str, limit: int = 50
+    ) -> list[dict]:
+        """Load conversation history for a session from persistent storage."""
+        rows = await self._db.execute_fetchall(
+            "SELECT content, metadata, created_at FROM memories "
+            "WHERE category = ? ORDER BY created_at ASC LIMIT ?",
+            (f"conversation:{session_id}", limit),
+        )
+        return [
+            {
+                "role": json.loads(row[1]).get("role", "user"),
+                "content": row[0],
+            }
+            for row in rows
+        ]
+
     async def close(self):
         """Close the database connection."""
         if self._db:
