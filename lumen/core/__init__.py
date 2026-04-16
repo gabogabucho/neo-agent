@@ -1,1 +1,1 @@
-"""Neo core — brain, consciousness, memory, connectors, sessions."""
+"""Lumen core — brain, consciousness, memory, connectors, sessions."""

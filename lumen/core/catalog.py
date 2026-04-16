@@ -13,7 +13,7 @@ import yaml
 
 
 class Catalog:
-    """Available modules that can be installed to extend Neo."""
+    """Available modules that can be installed to extend Lumen."""
 
     def __init__(self, catalog_path: Path | None = None):
         if catalog_path is None:
@@ -55,7 +55,7 @@ class Catalog:
     def find_for_gap(self, gap_description: str) -> list[dict]:
         """Find modules that could fill a specific capability gap.
 
-        This is the key method: Neo detects it can't do something,
+        This is the key method: Lumen detects it can't do something,
         describes the gap, and this method finds relevant modules.
         """
         return self.search(gap_description)
@@ -82,12 +82,16 @@ class Catalog:
             for m in self._modules
         ]
 
-    def as_context(self) -> str:
+    def as_context(self, installed_names: set[str] | None = None) -> str:
         """Format catalog for the LLM prompt.
 
-        The LLM uses this to recommend modules when it can't fulfill a request.
+        Filters out already-installed modules so the LLM doesn't
+        recommend installing something Lumen already has.
         """
-        if not self._modules:
+        installed = installed_names or set()
+        available = [m for m in self._modules if m["name"] not in installed]
+
+        if not available:
             return ""
 
         lines = [
@@ -97,7 +101,7 @@ class Catalog:
             "in this catalog could help, and suggest installing it.",
             "",
         ]
-        for mod in self._modules:
+        for mod in available:
             gaps = ", ".join(mod.get("fills_gaps", [])[:4])
             lines.append(
                 f"- **{mod.get('display_name', mod['name'])}** "

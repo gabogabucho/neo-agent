@@ -1,4 +1,4 @@
-"""Neo CLI — install, run, status. The bootstrapper, not the experience."""
+"""Lumen CLI — install, run, status. The bootstrapper, not the experience."""
 
 import os
 import webbrowser
@@ -24,10 +24,10 @@ PKG_DIR = Path(__file__).parent.parent
 
 @app.command()
 def install():
-    """Set up Neo for the first time."""
+    """Set up Lumen for the first time."""
     console.print(
         Panel(
-            "[bold cyan]Neo[/bold cyan] — First time setup",
+            "[bold cyan]Lumen[/bold cyan] — First time setup",
             expand=False,
         )
     )
@@ -90,7 +90,7 @@ def install():
     console.print(f"[green]>[/green] Language: [bold]{lang}[/bold]")
     console.print(f"[green]>[/green] Port: [bold]{port}[/bold]")
     console.print(
-        "\n[bold cyan]Run [white]neo run[/white] to start Neo.[/bold cyan]"
+        "\n[bold cyan]Run [white]lumen run[/white] to start Lumen.[/bold cyan]"
     )
 
 
@@ -166,7 +166,7 @@ def run(
 
         console.print(
             Panel(
-                f"[bold cyan]Neo[/bold cyan] is running\n\n"
+                f"[bold cyan]Lumen[/bold cyan] is running\n\n"
                 f"  Dashboard:  [link]http://localhost:{use_port}[/link]\n"
                 f"  Model:      {config.get('model')}\n"
                 f"  Language:   {lang}\n"
@@ -180,7 +180,7 @@ def run(
         use_port = port
         console.print(
             Panel(
-                f"[bold cyan]Neo[/bold cyan] — First time setup\n\n"
+                f"[bold cyan]Lumen[/bold cyan] — First time setup\n\n"
                 f"  Opening [link]http://localhost:{use_port}[/link]\n"
                 f"  Follow the setup wizard in your browser.",
                 title="Lumen",

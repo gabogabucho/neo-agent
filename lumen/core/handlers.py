@@ -155,7 +155,7 @@ TOOL_SCHEMAS: dict[str, dict] = {
 def register_builtin_handlers(registry: ConnectorRegistry, memory: Memory):
     """Register real handlers for all built-in connectors.
 
-    This is what makes Neo actually DO things instead of just talking.
+    This is what makes Lumen actually DO things instead of just talking.
     """
 
     # --- Task handlers ---

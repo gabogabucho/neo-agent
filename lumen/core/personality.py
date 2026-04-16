@@ -10,7 +10,7 @@ class Personality:
     """Defines Lumen's identity, tone, rules, and domain knowledge for a context.
 
     Loaded from a YAML file. Modules can replace the personality to transform
-    Neo into a different assistant (e.g. barbershop, restaurant, support).
+    Lumen into a different assistant (e.g. barbershop, restaurant, support).
     """
 
     def __init__(self, path: Path | str):

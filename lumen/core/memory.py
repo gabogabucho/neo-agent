@@ -10,7 +10,7 @@ import aiosqlite
 class Memory:
     """Lumen's persistent memory. Stores and recalls information using SQLite + FTS5.
 
-    Used for: task tracking, notes, conversation facts, anything Neo should
+    Used for: task tracking, notes, conversation facts, anything Lumen should
     remember across sessions.
     """
 

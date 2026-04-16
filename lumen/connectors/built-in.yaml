@@ -1,4 +1,4 @@
-# Built-in connectors — ship with every Neo installation
+# Built-in connectors — ship with every Lumen installation
 - name: message
   description: "Send and receive messages"
   actions: [send, receive]

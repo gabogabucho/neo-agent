@@ -1,5 +1,5 @@
-# Neo Module Catalog — available modules that can be installed
-# Neo queries this when it detects a capability gap.
+# Lumen Module Catalog — available modules that can be installed
+# Lumen queries this when it detects a capability gap.
 # Each entry maps to a module directory in catalog/modules/
 
 modules:

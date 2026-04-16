@@ -48,14 +48,18 @@
     <!-- Logo -->
     <div class="p-6 border-b border-neo-border">
       <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-neo-accent/20 flex items-center justify-center">
-          <svg class="w-6 h-6 text-neo-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+        <div class="w-10 h-10 rounded-xl bg-neo-accent/10 flex items-center justify-center">
+          <svg viewBox="0 0 220 130" class="w-8 h-5">
+            <path d="M10,65 Q45,15 110,10 Q175,15 210,65 Q175,115 110,120 Q45,115 10,65 Z"
+                  fill="none" stroke="#3b82f6" stroke-width="6" stroke-linecap="round" opacity="0.7"/>
+            <circle cx="110" cy="65" r="28" fill="#3b82f6" opacity="0.2"/>
+            <circle cx="110" cy="65" r="18" fill="#3b82f6" opacity="0.35"/>
+            <circle cx="110" cy="65" r="9" fill="#020408"/>
+            <circle cx="102" cy="58" r="4" fill="white" opacity="0.8"/>
           </svg>
         </div>
         <div>
-          <h1 class="text-lg font-bold text-white">Neo</h1>
+          <h1 class="text-lg font-bold text-white">Lumen</h1>
           <p class="text-xs text-gray-500">v{{ version }}</p>
         </div>
       </div>
@@ -530,7 +534,7 @@
     }
 
     async function uninstallModule(name) {
-      if (!confirm(`Uninstall ${name}? Neo will forget this capability.`)) return;
+      if (!confirm(`Uninstall ${name}? Lumen will forget this capability.`)) return;
       try {
         const res = await fetch(`/api/modules/uninstall/${name}`, { method: 'DELETE' });
         const data = await res.json();

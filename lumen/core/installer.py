@@ -1,4 +1,4 @@
-"""Module Installer — install = Neo knows, uninstall = Neo forgets.
+"""Module Installer — install = Lumen knows, uninstall = Lumen forgets.
 
 No restart. No config editing. No noise.
 Install a module → discovery re-runs → Lumen is aware.
@@ -182,7 +182,7 @@ class Installer:
             return {"status": "error", "error": str(e)}
 
     def uninstall(self, name: str) -> dict:
-        """Uninstall a module. Neo forgets."""
+        """Uninstall a module. Lumen forgets."""
         module_dir = self.installed_dir / name
         if not module_dir.exists():
             return {"status": "not_installed", "name": name}
@@ -196,7 +196,7 @@ class Installer:
         return {"status": "uninstalled", "name": name}
 
     def rediscover(self) -> Registry:
-        """Re-run discovery after install/uninstall. Neo becomes aware."""
+        """Re-run discovery after install/uninstall. Lumen becomes aware."""
         registry = Registry()
         discover_all(
             registry=registry,

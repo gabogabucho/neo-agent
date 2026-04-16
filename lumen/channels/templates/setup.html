@@ -251,12 +251,30 @@
   <div class="setup-container">
     <!-- Logo -->
     <div class="logo">
-      <svg viewBox="0 0 200 120">
-        <path d="M10,60 Q40,15 100,10 Q160,15 190,60 Q160,105 100,110 Q40,105 10,60 Z"
-              fill="none" stroke="#3b82f6" stroke-width="2"/>
-        <circle cx="100" cy="60" r="20" fill="#3b82f6" opacity="0.3"/>
-        <circle cx="100" cy="60" r="10" fill="#050a18"/>
-        <circle cx="92" cy="54" r="3" fill="white" opacity="0.7"/>
+      <svg viewBox="0 0 220 130" width="80" height="48">
+        <!-- Eye outline (faceted, matches awakening) -->
+        <path d="M10,65 Q45,15 110,10 Q175,15 210,65 Q175,115 110,120 Q45,115 10,65 Z"
+              fill="none" stroke="rgba(203,213,225,0.6)" stroke-width="2" stroke-linecap="round"/>
+        <!-- Inner facets -->
+        <path d="M35,65 Q65,30 110,24 Q155,30 185,65"
+              fill="none" stroke="rgba(71,85,105,0.4)" stroke-width="1"/>
+        <path d="M35,65 Q65,100 110,106 Q155,100 185,65"
+              fill="none" stroke="rgba(71,85,105,0.4)" stroke-width="1"/>
+        <!-- Iris glow -->
+        <circle cx="110" cy="65" r="30" fill="#3b82f6" opacity="0.12" filter="blur(6px)"/>
+        <!-- Iris -->
+        <circle cx="110" cy="65" r="30" fill="none" stroke="#3b82f6" stroke-width="2" opacity="0.5"/>
+        <circle cx="110" cy="65" r="22" fill="#3b82f6" opacity="0.25"/>
+        <!-- Pupil -->
+        <circle cx="110" cy="65" r="10" fill="#050a18"/>
+        <!-- Light reflections -->
+        <circle cx="100" cy="56" r="4" fill="white" opacity="0.8"/>
+        <circle cx="118" cy="52" r="2" fill="white" opacity="0.6"/>
+        <!-- Connection nodes -->
+        <circle cx="60" cy="32" r="2.5" fill="#3b82f6" opacity="0.7"/>
+        <circle cx="160" cy="32" r="2.5" fill="#3b82f6" opacity="0.7"/>
+        <circle cx="110" cy="10" r="2.5" fill="#3b82f6" opacity="0.7"/>
+        <circle cx="110" cy="120" r="2.5" fill="#3b82f6" opacity="0.7"/>
       </svg>
       <h1>Welcome to <span>Lumen</span></h1>
       <p>Let's set up your agent in 3 steps.</p>
@@ -428,7 +446,7 @@
       }
 
       btn.disabled = true;
-      btn.textContent = 'Starting Neo...';
+      btn.textContent = 'Starting Lumen...';
 
       try {
         const res = await fetch('/api/setup', {

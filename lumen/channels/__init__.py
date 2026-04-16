@@ -1,1 +1,1 @@
-"""Neo channels — communication adapters (web, whatsapp, telegram)."""
+"""Lumen channels — communication adapters (web, whatsapp, telegram)."""

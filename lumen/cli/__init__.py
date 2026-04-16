@@ -1,1 +1,1 @@
-"""Neo CLI — install, run, status."""
+"""Lumen CLI — install, run, status."""

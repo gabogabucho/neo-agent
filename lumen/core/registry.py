@@ -1,9 +1,9 @@
 """Registry (the Body) — WHAT Lumen has. Discovered at startup.
 
-If Neo doesn't know something exists, it doesn't exist.
+If Lumen doesn't know something exists, it doesn't exist.
 Every skill, connector, module, channel, and MCP server must register here.
 
-The Body is separate from Consciousness (WHO Lumen is) and Brain (HOW Neo thinks).
+The Body is separate from Consciousness (WHO Lumen is) and Brain (HOW Lumen thinks).
 Consciousness is immutable. The Body changes as you install or remove things.
 """
 
@@ -32,7 +32,7 @@ class CapabilityStatus(str, Enum):
 
 @dataclass
 class Capability:
-    """A single thing Neo knows it has (or is missing)."""
+    """A single thing Lumen knows it has (or is missing)."""
 
     kind: CapabilityKind
     name: str

@@ -1,4 +1,4 @@
-"""Brain (the Mind) — HOW Neo thinks. The context assembler.
+"""Brain (the Mind) — HOW Lumen thinks. The context assembler.
 
 The brain is NOT intelligent. The LLM is intelligent. The brain assembles
 the right context and lets the LLM decide everything.
@@ -69,7 +69,12 @@ class Brain:
             "consciousness": self.consciousness.as_context(),
             "personality": self.personality.as_context(),
             "body": self.registry.as_context(),
-            "catalog": self.catalog.as_context(),
+            "catalog": self.catalog.as_context(
+                installed_names={
+                    c.name
+                    for c in self.registry.list_by_kind(CapabilityKind.MODULE)
+                }
+            ),
             "active_flow": session.active_flow,
             "filled_slots": session.slots,
             "pending_slots": session.get_pending_slots(),
@@ -109,7 +114,7 @@ class Brain:
             }
         )
 
-        # Add module search tool — Neo recommends modules for gaps
+        # Add module search tool — Lumen recommends modules for gaps
         tools.append(
             {
                 "type": "function",

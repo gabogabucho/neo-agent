@@ -1,7 +1,7 @@
 dashboard:
   title: "Lumen — Panel"
   status: "Estado"
-  active: "Neo activo"
+  active: "Lumen activo"
   model: "Modelo"
   modules: "Modulos"
   config: "Configuracion"

@@ -300,9 +300,9 @@ async def api_modules_installed():
 
 @app.post("/api/modules/install/{name}")
 async def api_modules_install(name: str):
-    """Install a module from the catalog. Neo knows."""
+    """Install a module from the catalog. Lumen knows."""
     if not _brain:
-        return JSONResponse(status_code=503, content={"error": "Neo not ready"})
+        return JSONResponse(status_code=503, content={"error": "Lumen not ready"})
     from lumen.core.installer import Installer
 
     installer = Installer(
@@ -310,7 +310,7 @@ async def api_modules_install(name: str):
     )
     result = installer.install_from_catalog(name)
 
-    # Re-discover — Neo becomes aware of new capability
+    # Re-discover — Lumen becomes aware of new capability
     if result["status"] == "installed":
         _brain.registry = installer.rediscover()
 
@@ -319,9 +319,9 @@ async def api_modules_install(name: str):
 
 @app.delete("/api/modules/uninstall/{name}")
 async def api_modules_uninstall(name: str):
-    """Uninstall a module. Neo forgets."""
+    """Uninstall a module. Lumen forgets."""
     if not _brain:
-        return JSONResponse(status_code=503, content={"error": "Neo not ready"})
+        return JSONResponse(status_code=503, content={"error": "Lumen not ready"})
     from lumen.core.installer import Installer
 
     installer = Installer(
@@ -329,7 +329,7 @@ async def api_modules_uninstall(name: str):
     )
     result = installer.uninstall(name)
 
-    # Re-discover — Neo forgets the capability
+    # Re-discover — Lumen forgets the capability
     if result["status"] == "uninstalled":
         _brain.registry = installer.rediscover()
 
@@ -340,7 +340,7 @@ async def api_modules_uninstall(name: str):
 async def api_modules_upload(request: Request):
     """Upload and install a module from a ZIP file. WordPress-style."""
     if not _brain:
-        return JSONResponse(status_code=503, content={"error": "Neo not ready"})
+        return JSONResponse(status_code=503, content={"error": "Lumen not ready"})
     from lumen.core.installer import Installer
 
     body = await request.body()
