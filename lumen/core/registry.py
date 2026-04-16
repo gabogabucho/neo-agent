@@ -125,46 +125,41 @@ class Registry:
         This tells the LLM exactly what Lumen has and what's missing
         RIGHT NOW — discovered at startup, not hardcoded.
         """
-        lines = ["## Body (what I have — discovered at startup)"]
-
-        # Group by kind
-        for kind in CapabilityKind:
-            caps = self.list_by_kind(kind)
-            if not caps:
-                continue
-
-            ready = [c for c in caps if c.is_ready()]
-            not_ready = [c for c in caps if not c.is_ready()]
-
-            lines.append(f"\n### {kind.value.title()}s")
-
-            if ready:
-                for c in ready:
-                    tier = (
-                        f" (recommended: {c.min_capability})"
-                        if c.min_capability != "tier-1"
-                        else ""
-                    )
-                    lines.append(f"- {c.name}: {c.description}{tier}")
-
-            if not_ready:
-                lines.append("")
-                for c in not_ready:
-                    lines.append(
-                        f"- {c.name}: {c.description} "
-                        f"[{c.status.value}]"
-                    )
-
-        # Gaps awareness
+        all_ready = self.ready()
         all_gaps = self.gaps()
+
+        lines = [
+            "## Body (my active capabilities)",
+            "",
+            "IMPORTANT: Everything listed as READY below is something I CAN "
+            "and SHOULD do when the user asks. I do NOT need to install "
+            "anything — these are already active. Use neo__read_skill to "
+            "get detailed instructions for any skill.",
+        ]
+
+        # Ready capabilities — grouped by kind
+        if all_ready:
+            lines.append("\n### What I CAN do (READY — use immediately)")
+            for c in all_ready:
+                tier = (
+                    f" [{c.min_capability}]"
+                    if c.min_capability != "tier-1"
+                    else ""
+                )
+                lines.append(
+                    f"- **{c.name}** ({c.kind.value}): "
+                    f"{c.description}{tier}"
+                )
+
+        # Gaps — things that need extension
         if all_gaps:
-            lines.append("\n### What I Cannot Do Yet")
+            lines.append("\n### What I CANNOT do yet (needs extension)")
             for gap in all_gaps:
                 reason = gap.status.value.replace("_", " ")
-                lines.append(f"- {gap.name} ({reason})")
+                lines.append(f"- {gap.name}: {gap.description} [{reason}]")
             lines.append(
-                "\nIf the user asks for something I cannot do, "
-                "I should explain what's missing and suggest how to extend me."
+                "\nFor these, explain what's missing and suggest "
+                "installing a module from the catalog."
             )
 
         return "\n".join(lines)
