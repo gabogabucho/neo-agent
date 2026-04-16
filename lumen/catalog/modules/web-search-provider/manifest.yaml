@@ -1,0 +1,11 @@
+name: web-search-provider
+display_name: "Web Search"
+description: "Search the web and extract content from URLs. Powers the web connector with real search capabilities."
+version: 1.0.0
+author: "Lumen Team"
+price: free
+min_capability: tier-2
+provides:
+  - web.search
+  - web.extract
+tags: [web, search, internet]

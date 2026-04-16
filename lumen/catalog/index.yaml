@@ -1,0 +1,109 @@
+# Neo Module Catalog — available modules that can be installed
+# Neo queries this when it detects a capability gap.
+# Each entry maps to a module directory in catalog/modules/
+
+modules:
+  - name: scheduler
+    display_name: "Scheduler"
+    description: "Schedule reminders and recurring tasks. Adds cron-like capabilities."
+    version: "1.0.0"
+    author: "Lumen Team"
+    price: free
+    min_capability: tier-2
+    fills_gaps:
+      - "reminder"
+      - "schedule"
+      - "cron"
+      - "timer"
+      - "alarm"
+      - "recurring"
+    provides:
+      - scheduler.create
+      - scheduler.list
+      - scheduler.cancel
+    requires:
+      connectors: [task, memory]
+    tags: [productivity, time, reminders]
+
+  - name: web-search-provider
+    display_name: "Web Search"
+    description: "Search the web and extract content from URLs. Powers the web connector."
+    version: "1.0.0"
+    author: "Lumen Team"
+    price: free
+    min_capability: tier-2
+    fills_gaps:
+      - "web search"
+      - "search the web"
+      - "browse"
+      - "internet"
+      - "look up online"
+      - "find online"
+    provides:
+      - web.search
+      - web.extract
+    tags: [web, search, internet]
+
+  - name: file-manager
+    display_name: "File Manager"
+    description: "Read, write, and list local files. Powers the file connector."
+    version: "1.0.0"
+    author: "Lumen Team"
+    price: free
+    min_capability: tier-1
+    fills_gaps:
+      - "read file"
+      - "write file"
+      - "list files"
+      - "open file"
+      - "save file"
+    provides:
+      - file.read
+      - file.write
+      - file.list
+    tags: [files, filesystem, storage]
+
+  - name: peluqueria
+    display_name: "Lumen Peluqueria"
+    description: "Barbershop/salon assistant. Booking, pricing, cancellations via WhatsApp or web."
+    version: "1.0.0"
+    author: "Lumen Team"
+    price: free
+    min_capability: tier-2
+    fills_gaps:
+      - "appointment"
+      - "booking"
+      - "barbershop"
+      - "salon"
+      - "haircut"
+      - "turno"
+      - "peluqueria"
+    provides:
+      - calendar.check_availability
+      - calendar.create
+      - calendar.cancel
+    requires:
+      connectors: [task, memory, message]
+    tags: [vertical, barbershop, booking]
+
+  - name: restaurant
+    display_name: "Lumen Restaurant"
+    description: "Restaurant assistant. Menu, reservations, orders, and delivery management."
+    version: "1.0.0"
+    author: "Lumen Team"
+    price: free
+    min_capability: tier-2
+    fills_gaps:
+      - "reservation"
+      - "restaurant"
+      - "menu"
+      - "order"
+      - "table"
+      - "delivery"
+    provides:
+      - menu.list
+      - reservation.create
+      - order.create
+    requires:
+      connectors: [task, memory, message]
+    tags: [vertical, restaurant, food]

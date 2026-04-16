@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lumen — Setup</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #050a18;
+      color: #e5e7eb;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .setup-container {
+      width: 100%;
+      max-width: 560px;
+      padding: 24px;
+    }
+
+    /* Logo */
+    .logo {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    .logo svg { width: 64px; height: 40px; margin-bottom: 16px; }
+
+    .logo h1 {
+      font-size: 28px;
+      font-weight: 200;
+      letter-spacing: 0.1em;
+    }
+
+    .logo h1 span { font-weight: 600; color: #3b82f6; }
+
+    .logo p {
+      font-size: 14px;
+      color: #6b7280;
+      margin-top: 8px;
+    }
+
+    /* Steps */
+    .step { display: none; animation: fadeIn 0.4s ease-out; }
+    .step.active { display: block; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .step-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #6b7280;
+      margin-bottom: 8px;
+    }
+
+    .step-title {
+      font-size: 22px;
+      font-weight: 500;
+      margin-bottom: 24px;
+    }
+
+    /* Language cards */
+    .lang-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 32px;
+    }
+
+    .lang-card {
+      background: #111827;
+      border: 2px solid #1e293b;
+      border-radius: 12px;
+      padding: 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .lang-card:hover { border-color: #3b82f6; }
+    .lang-card.selected { border-color: #3b82f6; background: rgba(59,130,246,0.1); }
+
+    .lang-card .flag { font-size: 32px; margin-bottom: 8px; }
+    .lang-card .name { font-size: 16px; font-weight: 500; }
+    .lang-card .native { font-size: 13px; color: #9ca3af; margin-top: 4px; }
+
+    /* Provider cards */
+    .provider-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 32px;
+    }
+
+    .provider-card {
+      background: #111827;
+      border: 2px solid #1e293b;
+      border-radius: 12px;
+      padding: 20px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .provider-card:hover { border-color: #3b82f6; }
+    .provider-card.selected { border-color: #3b82f6; background: rgba(59,130,246,0.1); }
+
+    .provider-card .provider-name {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .provider-card .provider-model {
+      font-size: 12px;
+      color: #9ca3af;
+      font-family: monospace;
+    }
+
+    .provider-card .provider-tag {
+      display: inline-block;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 6px;
+      margin-top: 8px;
+    }
+
+    .tag-recommended { background: rgba(16,185,129,0.2); color: #10b981; }
+    .tag-local { background: rgba(168,85,247,0.2); color: #a855f7; }
+    .tag-premium { background: rgba(59,130,246,0.2); color: #3b82f6; }
+
+    /* Input */
+    .input-group { margin-bottom: 24px; }
+
+    .input-group label {
+      display: block;
+      font-size: 13px;
+      color: #9ca3af;
+      margin-bottom: 8px;
+    }
+
+    .input-group input {
+      width: 100%;
+      padding: 12px 16px;
+      background: #111827;
+      border: 2px solid #1e293b;
+      border-radius: 10px;
+      color: white;
+      font-family: monospace;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .input-group input:focus { border-color: #3b82f6; }
+
+    .input-group input::placeholder { color: #4b5563; }
+
+    .input-hint {
+      font-size: 12px;
+      color: #6b7280;
+      margin-top: 8px;
+    }
+
+    /* Buttons */
+    .btn-row {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+    }
+
+    .btn {
+      padding: 12px 28px;
+      border-radius: 10px;
+      font-family: 'Inter', sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: #3b82f6;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #2563eb;
+      box-shadow: 0 4px 20px rgba(59,130,246,0.3);
+    }
+
+    .btn-primary:disabled {
+      background: #1e3a5f;
+      color: #6b7280;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: #9ca3af;
+      border: 1px solid #1e293b;
+    }
+
+    .btn-ghost:hover { border-color: #3b82f6; color: white; }
+
+    /* Progress dots */
+    .progress {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 32px;
+    }
+
+    .progress-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #1e293b;
+      transition: all 0.3s;
+    }
+
+    .progress-dot.active { background: #3b82f6; width: 24px; border-radius: 4px; }
+    .progress-dot.done { background: #10b981; }
+
+    /* Error */
+    .error-msg {
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.3);
+      color: #f87171;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-bottom: 16px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="setup-container">
+    <!-- Logo -->
+    <div class="logo">
+      <svg viewBox="0 0 200 120">
+        <path d="M10,60 Q40,15 100,10 Q160,15 190,60 Q160,105 100,110 Q40,105 10,60 Z"
+              fill="none" stroke="#3b82f6" stroke-width="2"/>
+        <circle cx="100" cy="60" r="20" fill="#3b82f6" opacity="0.3"/>
+        <circle cx="100" cy="60" r="10" fill="#050a18"/>
+        <circle cx="92" cy="54" r="3" fill="white" opacity="0.7"/>
+      </svg>
+      <h1>Welcome to <span>Lumen</span></h1>
+      <p>Let's set up your agent in 3 steps.</p>
+    </div>
+
+    <!-- Progress -->
+    <div class="progress">
+      <div class="progress-dot active" id="dot-0"></div>
+      <div class="progress-dot" id="dot-1"></div>
+      <div class="progress-dot" id="dot-2"></div>
+    </div>
+
+    <!-- Step 1: Language -->
+    <div class="step active" id="step-0">
+      <div class="step-label">Step 1 of 3</div>
+      <div class="step-title">Choose your language</div>
+
+      <div class="lang-grid">
+        <div class="lang-card" data-lang="en" onclick="selectLang(this)">
+          <div class="flag">EN</div>
+          <div class="name">English</div>
+          <div class="native">English</div>
+        </div>
+        <div class="lang-card" data-lang="es" onclick="selectLang(this)">
+          <div class="flag">ES</div>
+          <div class="name">Spanish</div>
+          <div class="native">Espanol</div>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btn-next-0" disabled onclick="nextStep()">Continue</button>
+      </div>
+    </div>
+
+    <!-- Step 2: Model -->
+    <div class="step" id="step-1">
+      <div class="step-label">Step 2 of 3</div>
+      <div class="step-title">Choose your model</div>
+
+      <div class="provider-grid">
+        <div class="provider-card" data-model="deepseek/deepseek-chat" data-env="DEEPSEEK_API_KEY" onclick="selectProvider(this)">
+          <div class="provider-name">DeepSeek</div>
+          <div class="provider-model">deepseek-chat</div>
+          <span class="provider-tag tag-recommended">Recommended</span>
+        </div>
+        <div class="provider-card" data-model="gpt-4o-mini" data-env="OPENAI_API_KEY" onclick="selectProvider(this)">
+          <div class="provider-name">OpenAI</div>
+          <div class="provider-model">gpt-4o-mini</div>
+          <span class="provider-tag tag-premium">Popular</span>
+        </div>
+        <div class="provider-card" data-model="claude-sonnet-4-20250514" data-env="ANTHROPIC_API_KEY" onclick="selectProvider(this)">
+          <div class="provider-name">Anthropic</div>
+          <div class="provider-model">claude-sonnet-4</div>
+          <span class="provider-tag tag-premium">Premium</span>
+        </div>
+        <div class="provider-card" data-model="ollama/llama3" data-env="" onclick="selectProvider(this)">
+          <div class="provider-name">Ollama</div>
+          <div class="provider-model">llama3 (local)</div>
+          <span class="provider-tag tag-local">No API key</span>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-ghost" onclick="prevStep()">Back</button>
+        <button class="btn btn-primary" id="btn-next-1" disabled onclick="nextStep()">Continue</button>
+      </div>
+    </div>
+
+    <!-- Step 3: API Key -->
+    <div class="step" id="step-2">
+      <div class="step-label">Step 3 of 3</div>
+      <div class="step-title" id="key-title">Enter your API key</div>
+
+      <div id="key-section">
+        <div class="input-group">
+          <label id="key-label">API Key</label>
+          <input type="password" id="api-key-input" placeholder="sk-..." autocomplete="off" />
+          <div class="input-hint" id="key-hint">Your key is stored locally in ~/.neo/config.yaml</div>
+        </div>
+      </div>
+
+      <div id="no-key-section" style="display:none;">
+        <p style="color:#9ca3af; font-size:14px; margin-bottom:24px;">
+          Ollama runs locally — no API key needed. Make sure Ollama is running on your machine.
+        </p>
+      </div>
+
+      <div class="error-msg" id="error-msg"></div>
+
+      <div class="btn-row">
+        <button class="btn btn-ghost" onclick="prevStep()">Back</button>
+        <button class="btn btn-primary" id="btn-finish" onclick="finishSetup()">Start Lumen</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentStep = 0;
+    let config = { language: '', model: '', api_key_env: '', api_key: '' };
+
+    // --- Language selection ---
+    function selectLang(el) {
+      document.querySelectorAll('.lang-card').forEach(c => c.classList.remove('selected'));
+      el.classList.add('selected');
+      config.language = el.dataset.lang;
+      document.getElementById('btn-next-0').disabled = false;
+    }
+
+    // --- Provider selection ---
+    function selectProvider(el) {
+      document.querySelectorAll('.provider-card').forEach(c => c.classList.remove('selected'));
+      el.classList.add('selected');
+      config.model = el.dataset.model;
+      config.api_key_env = el.dataset.env;
+      document.getElementById('btn-next-1').disabled = false;
+    }
+
+    // --- Step navigation ---
+    function showStep(n) {
+      document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+      document.getElementById(`step-${n}`).classList.add('active');
+
+      document.querySelectorAll('.progress-dot').forEach((d, i) => {
+        d.classList.remove('active', 'done');
+        if (i < n) d.classList.add('done');
+        if (i === n) d.classList.add('active');
+      });
+
+      // Update step 3 based on provider
+      if (n === 2) {
+        if (!config.api_key_env) {
+          document.getElementById('key-section').style.display = 'none';
+          document.getElementById('no-key-section').style.display = 'block';
+          document.getElementById('key-title').textContent = 'Almost there';
+        } else {
+          document.getElementById('key-section').style.display = 'block';
+          document.getElementById('no-key-section').style.display = 'none';
+          document.getElementById('key-title').textContent = 'Enter your API key';
+          document.getElementById('key-label').textContent = config.api_key_env;
+          document.getElementById('api-key-input').placeholder =
+            config.api_key_env.includes('DEEPSEEK') ? 'sk-...' :
+            config.api_key_env.includes('OPENAI') ? 'sk-...' :
+            config.api_key_env.includes('ANTHROPIC') ? 'sk-ant-...' : 'key...';
+          document.getElementById('api-key-input').focus();
+        }
+      }
+
+      currentStep = n;
+    }
+
+    function nextStep() { showStep(currentStep + 1); }
+    function prevStep() { showStep(currentStep - 1); }
+
+    // --- Finish setup ---
+    async function finishSetup() {
+      const btn = document.getElementById('btn-finish');
+      const errEl = document.getElementById('error-msg');
+      errEl.style.display = 'none';
+
+      // Get API key if needed
+      if (config.api_key_env) {
+        config.api_key = document.getElementById('api-key-input').value.trim();
+        if (!config.api_key) {
+          errEl.textContent = 'Please enter your API key.';
+          errEl.style.display = 'block';
+          return;
+        }
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Starting Neo...';
+
+      try {
+        const res = await fetch('/api/setup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            language: config.language,
+            model: config.model,
+            api_key_env: config.api_key_env || null,
+            api_key: config.api_key || null,
+            port: parseInt(location.port) || 3000,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (data.status === 'ok') {
+          // Redirect to awakening
+          window.location.href = '/';
+        } else {
+          errEl.textContent = data.error || 'Setup failed. Please try again.';
+          errEl.style.display = 'block';
+          btn.disabled = false;
+          btn.textContent = 'Start Lumen';
+        }
+      } catch (e) {
+        errEl.textContent = 'Connection error. Is the server running?';
+        errEl.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Start Lumen';
+      }
+    }
+
+    // Allow Enter key on API key input
+    document.getElementById('api-key-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') finishSetup();
+    });
+  </script>
+</body>
+</html>

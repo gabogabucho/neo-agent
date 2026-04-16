@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "neo-agent"
+name = "lumen-agent"
 version = "0.1.0"
 description = "Open-source AI agent engine. Modular. No limits."
 requires-python = ">=3.11"
@@ -21,15 +21,16 @@ dependencies = [
 ]
 
 [project.scripts]
-neo = "neo.cli.main:app"
+lumen = "lumen.cli.main:app"
 
 [tool.hatch.build.targets.wheel]
-packages = ["neo"]
+packages = ["lumen"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"neo/core/consciousness.yaml" = "neo/core/consciousness.yaml"
-"neo/connectors/built-in.yaml" = "neo/connectors/built-in.yaml"
-"neo/channels/templates" = "neo/channels/templates"
-"neo/locales" = "neo/locales"
-"neo/modules" = "neo/modules"
-"neo/skills" = "neo/skills"
+"lumen/core/consciousness.yaml" = "lumen/core/consciousness.yaml"
+"lumen/connectors/built-in.yaml" = "lumen/connectors/built-in.yaml"
+"lumen/channels/templates" = "lumen/channels/templates"
+"lumen/locales" = "lumen/locales"
+"lumen/modules" = "lumen/modules"
+"lumen/skills" = "lumen/skills"
+"lumen/catalog" = "lumen/catalog"
