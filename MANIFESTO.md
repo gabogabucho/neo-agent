@@ -241,6 +241,45 @@ The default template works with ANY model (tier-1). Modules with flows need tier
 
 ---
 
+## Install = Neo Knows. Uninstall = Neo Forgets.
+
+No restart. No config editing. No noise.
+
+When you install a module, the Discovery system re-runs and Neo becomes aware of the new capability. When you uninstall, the capability disappears from consciousness as if it never existed. One click. No ceremony.
+
+This applies to everything: modules, skills, connectors, channels. If it self-declares, Neo knows. If it's removed, Neo forgets.
+
+Neo also acts as its own module advisor. When it can't fulfill a request, it searches the module catalog, finds what fills the gap, and recommends installing it:
+
+```
+User: "Remind me to call Maria at 3pm"
+Neo:  "I can't set reminders yet — I don't have that capability.
+       But the Scheduler module can add reminders.
+       You can install it from the Modules panel in the dashboard."
+```
+
+This is the WordPress model: "You need this plugin. Install it?" — one click.
+
+---
+
+## Channels Are Conscious Capabilities
+
+In most agent frameworks, channels (WhatsApp, Telegram) are external gateways the agent doesn't know about. Each conversation is a "restarted agent" with no continuity or shared identity.
+
+In Neo, channels are capabilities in the Body. They self-declare like everything else. Neo KNOWS it can speak through WhatsApp, Telegram, and the web — because those channels are registered in its Body.
+
+This means:
+
+```
+Web dashboard ──┐
+WhatsApp ───────┤── SAME Neo, SAME memory, SAME personality
+Telegram ───────┘
+```
+
+The user who talks to Neo on WhatsApp talks to the SAME Neo as the one on the web dashboard. Memory persists. Identity is one. Channels are mouths — the brain, consciousness, and memory are shared.
+
+---
+
 ## What Neo Will Never Be
 
 - Neo will never self-program its own tools at runtime.

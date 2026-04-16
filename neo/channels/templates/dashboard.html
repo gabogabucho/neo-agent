@@ -222,18 +222,28 @@
 
     <!-- Modules Panel -->
     <div id="panel-modules" class="hidden flex-1 overflow-y-auto p-8">
-      <h2 class="text-2xl font-bold text-white mb-6">{{ ui.modules | default('Modules') }}</h2>
-      <div class="bg-neo-card rounded-xl border border-neo-border p-8 text-center">
-        <div class="w-16 h-16 rounded-2xl bg-neo-accent/10 flex items-center justify-center mx-auto mb-4">
-          <svg class="w-8 h-8 text-neo-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-          </svg>
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-2xl font-bold text-white">{{ ui.modules | default('Modules') }}</h2>
+        <label class="bg-neo-accent/20 text-neo-accent px-4 py-2 rounded-lg text-sm font-medium hover:bg-neo-accent/30 transition-colors cursor-pointer">
+          Upload ZIP
+          <input type="file" accept=".zip" id="zip-upload" class="hidden" onchange="uploadZip(this)" />
+        </label>
+      </div>
+
+      <!-- Installed -->
+      <div class="mb-8">
+        <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Installed</h3>
+        <div id="installed-modules" class="space-y-3">
+          <p class="text-gray-500 text-sm">Loading...</p>
         </div>
-        <h3 class="text-lg font-semibold text-white mb-2">{{ ui.no_modules | default('No modules installed') }}</h3>
-        <p class="text-gray-400 text-sm mb-4">{{ ui.explore_store | default('Explore the store to add capabilities') }}</p>
-        <button class="bg-neo-accent/20 text-neo-accent px-4 py-2 rounded-lg text-sm font-medium hover:bg-neo-accent/30 transition-colors">
-          {{ ui.explore_store_btn | default('Explore store') }} &rarr;
-        </button>
+      </div>
+
+      <!-- Available from catalog -->
+      <div>
+        <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Available</h3>
+        <div id="catalog-modules" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <p class="text-gray-500 text-sm">Loading...</p>
+        </div>
       </div>
     </div>
 
@@ -427,6 +437,140 @@
       }
     }
     loadStatus();
+
+    // --- Module Management ---
+    async function loadModules() {
+      try {
+        const [catalogRes, installedRes] = await Promise.all([
+          fetch('/api/modules/catalog'),
+          fetch('/api/modules/installed'),
+        ]);
+        const catalog = await catalogRes.json();
+        const installed = await installedRes.json();
+
+        const installedNames = new Set(installed.modules.map(m => m.name));
+
+        // Render installed modules
+        const installedEl = document.getElementById('installed-modules');
+        if (installed.modules.length === 0) {
+          installedEl.innerHTML = `
+            <div class="bg-neo-card rounded-xl border border-neo-border p-6 text-center">
+              <p class="text-gray-500 text-sm">No modules installed yet.</p>
+              <p class="text-gray-600 text-xs mt-1">Install one from the catalog below.</p>
+            </div>`;
+        } else {
+          installedEl.innerHTML = installed.modules.map(m => `
+            <div class="bg-neo-card rounded-xl border border-neo-border p-4 flex items-center justify-between">
+              <div>
+                <div class="flex items-center gap-2">
+                  <div class="w-2 h-2 rounded-full bg-green-400"></div>
+                  <span class="text-white font-medium">${escapeHtml(m.display_name)}</span>
+                  <span class="text-xs text-gray-500">v${m.version}</span>
+                </div>
+                <p class="text-gray-400 text-xs mt-1 ml-4">${escapeHtml(m.description)}</p>
+              </div>
+              <button onclick="uninstallModule('${m.name}')"
+                      class="text-xs px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors">
+                Uninstall
+              </button>
+            </div>
+          `).join('');
+        }
+
+        // Render catalog (not installed)
+        const catalogEl = document.getElementById('catalog-modules');
+        const available = catalog.modules.filter(m => !installedNames.has(m.name));
+
+        if (available.length === 0) {
+          catalogEl.innerHTML = `
+            <div class="bg-neo-card rounded-xl border border-neo-border p-6 text-center col-span-2">
+              <p class="text-gray-500 text-sm">All modules are installed!</p>
+            </div>`;
+        } else {
+          catalogEl.innerHTML = available.map(m => `
+            <div class="bg-neo-card rounded-xl border border-neo-border p-5">
+              <div class="flex items-start justify-between mb-3">
+                <div>
+                  <h4 class="text-white font-semibold">${escapeHtml(m.display_name)}</h4>
+                  <span class="text-xs text-gray-500">${m.min_capability} &bull; ${m.price}</span>
+                </div>
+                <button onclick="installModule('${m.name}', this)"
+                        class="text-xs px-3 py-1.5 rounded-lg bg-neo-accent/20 text-neo-accent hover:bg-neo-accent/30 transition-colors">
+                  Install
+                </button>
+              </div>
+              <p class="text-gray-400 text-sm">${escapeHtml(m.description)}</p>
+              ${m.tags ? `<div class="flex gap-1 mt-3">${m.tags.map(t =>
+                `<span class="text-xs px-2 py-0.5 rounded bg-white/5 text-gray-500">${t}</span>`
+              ).join('')}</div>` : ''}
+            </div>
+          `).join('');
+        }
+      } catch (e) {
+        console.error('Failed to load modules:', e);
+      }
+    }
+
+    async function installModule(name, btn) {
+      if (btn) { btn.disabled = true; btn.textContent = 'Installing...'; }
+      try {
+        const res = await fetch(`/api/modules/install/${name}`, { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'installed') {
+          loadModules();
+          loadStatus(); // Refresh status panel too
+        } else {
+          alert(data.error || data.status);
+          if (btn) { btn.disabled = false; btn.textContent = 'Install'; }
+        }
+      } catch (e) {
+        alert('Install failed: ' + e.message);
+        if (btn) { btn.disabled = false; btn.textContent = 'Install'; }
+      }
+    }
+
+    async function uninstallModule(name) {
+      if (!confirm(`Uninstall ${name}? Neo will forget this capability.`)) return;
+      try {
+        const res = await fetch(`/api/modules/uninstall/${name}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.status === 'uninstalled') {
+          loadModules();
+          loadStatus();
+        }
+      } catch (e) {
+        alert('Uninstall failed: ' + e.message);
+      }
+    }
+
+    async function uploadZip(input) {
+      const file = input.files[0];
+      if (!file) return;
+      try {
+        const data = await file.arrayBuffer();
+        const res = await fetch('/api/modules/upload', {
+          method: 'POST',
+          body: data,
+        });
+        const result = await res.json();
+        if (result.status === 'installed') {
+          loadModules();
+          loadStatus();
+        } else {
+          alert(result.error || result.status);
+        }
+      } catch (e) {
+        alert('Upload failed: ' + e.message);
+      }
+      input.value = '';
+    }
+
+    // Load modules when panel is shown
+    const origShowPanel = showPanel;
+    showPanel = function(name) {
+      origShowPanel(name);
+      if (name === 'modules') loadModules();
+    };
   </script>
 </body>
 </html>

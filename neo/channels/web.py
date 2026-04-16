@@ -273,6 +273,90 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
         session_manager.remove(session_id)
 
 
+# ─── Module Management API ───
+
+
+@app.get("/api/modules/catalog")
+async def api_modules_catalog():
+    """List all available modules from the catalog."""
+    if not _brain:
+        return {"modules": []}
+    return {"modules": _brain.catalog.list_all()}
+
+
+@app.get("/api/modules/installed")
+async def api_modules_installed():
+    """List installed modules."""
+    if not _brain:
+        return {"modules": []}
+    from neo.core.installer import Installer
+
+    installer = Installer(
+        PKG_DIR, _brain.connectors, _brain.memory, _brain.catalog
+    )
+    return {"modules": installer.list_installed()}
+
+
+@app.post("/api/modules/install/{name}")
+async def api_modules_install(name: str):
+    """Install a module from the catalog. Neo knows."""
+    if not _brain:
+        return JSONResponse(status_code=503, content={"error": "Neo not ready"})
+    from neo.core.installer import Installer
+
+    installer = Installer(
+        PKG_DIR, _brain.connectors, _brain.memory, _brain.catalog
+    )
+    result = installer.install_from_catalog(name)
+
+    # Re-discover — Neo becomes aware of new capability
+    if result["status"] == "installed":
+        _brain.registry = installer.rediscover()
+
+    return result
+
+
+@app.delete("/api/modules/uninstall/{name}")
+async def api_modules_uninstall(name: str):
+    """Uninstall a module. Neo forgets."""
+    if not _brain:
+        return JSONResponse(status_code=503, content={"error": "Neo not ready"})
+    from neo.core.installer import Installer
+
+    installer = Installer(
+        PKG_DIR, _brain.connectors, _brain.memory, _brain.catalog
+    )
+    result = installer.uninstall(name)
+
+    # Re-discover — Neo forgets the capability
+    if result["status"] == "uninstalled":
+        _brain.registry = installer.rediscover()
+
+    return result
+
+
+@app.post("/api/modules/upload")
+async def api_modules_upload(request: Request):
+    """Upload and install a module from a ZIP file. WordPress-style."""
+    if not _brain:
+        return JSONResponse(status_code=503, content={"error": "Neo not ready"})
+    from neo.core.installer import Installer
+
+    body = await request.body()
+    installer = Installer(
+        PKG_DIR, _brain.connectors, _brain.memory, _brain.catalog
+    )
+    result = installer.install_from_zip(body)
+
+    if result["status"] == "installed":
+        _brain.registry = installer.rediscover()
+
+    return result
+
+
+# ─── Status API ───
+
+
 @app.get("/api/status")
 async def api_status():
     """Neo's current status — from the Body (registry)."""
