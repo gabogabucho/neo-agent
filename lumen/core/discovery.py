@@ -53,6 +53,10 @@ def discover_all(
     if mcp_config:
         _discover_mcps(registry, mcp_config)
 
+    # Second pass: validate skill dependencies
+    # If a skill requires a connector that has no handler, mark it as MISSING_DEPS
+    _validate_skill_deps(registry)
+
     return registry
 
 
@@ -128,6 +132,25 @@ def _discover_skills(registry: Registry, skills_dir: Path):
                     status=CapabilityStatus.ERROR,
                 )
             )
+
+
+def _validate_skill_deps(registry: Registry):
+    """Check if skills have their required connectors ready.
+
+    A skill that requires connectors: [web] but web has no handler
+    should NOT be listed as READY — it would mislead the LLM.
+    """
+    for cap in registry.list_by_kind(CapabilityKind.SKILL):
+        if cap.status != CapabilityStatus.READY:
+            continue
+        required_connectors = cap.requires.get("connectors", [])
+        if not required_connectors:
+            continue
+        for conn_name in required_connectors:
+            conn = registry.get(CapabilityKind.CONNECTOR, conn_name)
+            if conn and not conn.is_ready():
+                cap.status = CapabilityStatus.MISSING_DEPS
+                break
 
 
 def _discover_connectors(registry: Registry, connectors: ConnectorRegistry):

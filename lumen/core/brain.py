@@ -246,10 +246,21 @@ class Brain:
         4. Current state — active flow, memories, conversation
         """
         system_parts = [
+            # CRITICAL RULES — the LLM MUST obey these
+            "## RULES (you MUST follow these exactly)",
+            "",
+            "1. Your capabilities are EXACTLY what the Body section lists.",
+            "2. If something is listed under 'What I CAN do' — you CAN do it. Do NOT say you need to install it.",
+            "3. If something is listed under 'What I CANNOT do' — you CANNOT do it. Do NOT claim you can.",
+            "4. NEVER invent capabilities not listed in the Body.",
+            "5. When asked what you can do, ONLY list what the Body says.",
+            "",
             # 1. CONSCIOUSNESS — the soul (never changes)
             context["consciousness"],
             "",
             # 2. PERSONALITY — context identity (changes per module)
+            "## Personality (who I am in this context)",
+            "",
             context["personality"],
             "",
             # 3. BODY — discovered capabilities (changes per install)
