@@ -16,6 +16,7 @@ from pathlib import Path
 import yaml
 from litellm import acompletion
 
+from neo.core.catalog import Catalog
 from neo.core.connectors import ConnectorRegistry
 from neo.core.consciousness import Consciousness
 from neo.core.memory import Memory
@@ -27,7 +28,7 @@ from neo.core.session import Session
 class Brain:
     """Neo's brain — a context assembler, not a routing engine.
 
-    Combines Consciousness + Personality + Body into a prompt,
+    Combines Consciousness + Personality + Body + Catalog into a prompt,
     lets the LLM decide, and executes tool calls.
     """
 
@@ -38,6 +39,7 @@ class Brain:
         memory: Memory,
         connectors: ConnectorRegistry,
         registry: Registry,
+        catalog: Catalog | None = None,
         model: str = "deepseek/deepseek-chat",
         flows: list[dict] | None = None,
     ):
@@ -46,6 +48,7 @@ class Brain:
         self.memory = memory
         self.connectors = connectors
         self.registry = registry
+        self.catalog = catalog or Catalog()
         self.model = model
         self.flows = flows or []
 
@@ -61,11 +64,12 @@ class Brain:
             if triggered:
                 session.start_flow(triggered)
 
-        # 3. Build context — Consciousness + Personality + Body + State
+        # 3. Build context — Consciousness + Personality + Body + Catalog + State
         context = {
             "consciousness": self.consciousness.as_context(),
             "personality": self.personality.as_context(),
             "body": self.registry.as_context(),
+            "catalog": self.catalog.as_context(),
             "active_flow": session.active_flow,
             "filled_slots": session.slots,
             "pending_slots": session.get_pending_slots(),
@@ -100,6 +104,32 @@ class Brain:
                             }
                         },
                         "required": ["skill_name"],
+                    },
+                },
+            }
+        )
+
+        # Add module search tool — Neo recommends modules for gaps
+        tools.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": "neo__search_modules",
+                    "description": (
+                        "Search the module catalog for modules that can add "
+                        "a capability I don't have yet. Use this when the user "
+                        "asks for something I cannot do — find a module that "
+                        "fills the gap and recommend installing it."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "What capability is needed",
+                            }
+                        },
+                        "required": ["query"],
                     },
                 },
             }
@@ -150,6 +180,34 @@ class Brain:
         except Exception as e:
             return {"error": f"Cannot read skill '{skill_name}': {e}"}
 
+    def _search_modules(self, arguments: str) -> dict:
+        """Search the module catalog for modules that fill a capability gap."""
+        params = json.loads(arguments) if arguments else {}
+        query = params.get("query", "")
+
+        results = self.catalog.find_for_gap(query)
+        if not results:
+            return {
+                "found": 0,
+                "message": "No modules found for this capability. "
+                "It could be built as a custom module.",
+            }
+
+        modules = []
+        for mod in results[:3]:
+            modules.append(
+                {
+                    "name": mod["name"],
+                    "display_name": mod.get("display_name", mod["name"]),
+                    "description": mod.get("description", ""),
+                    "price": mod.get("price", "free"),
+                    "install_hint": f"Install from the Modules panel in the dashboard, "
+                    f"or tell me 'install {mod['name']}' and I'll guide you.",
+                }
+            )
+
+        return {"found": len(modules), "modules": modules}
+
     def _match_flow_trigger(self, message: str) -> dict | None:
         """Check if a message matches any flow trigger."""
         msg_lower = message.lower()
@@ -180,6 +238,11 @@ class Brain:
             # 3. BODY — discovered capabilities (changes per install)
             context["body"],
         ]
+
+        # 4. CATALOG — what modules exist to fill gaps
+        if context.get("catalog"):
+            system_parts.append("")
+            system_parts.append(context["catalog"])
 
         # 4. CURRENT STATE — what's happening right now
 
@@ -325,6 +388,11 @@ class Brain:
                     # Introspection tools (neo__*) are handled by the brain
                     if func.name == "neo__read_skill":
                         tool_result = self._read_skill(func.arguments)
+                        all_tool_calls.append(
+                            {"name": func.name, "result": tool_result}
+                        )
+                    elif func.name == "neo__search_modules":
+                        tool_result = self._search_modules(func.arguments)
                         all_tool_calls.append(
                             {"name": func.name, "result": tool_result}
                         )

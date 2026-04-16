@@ -62,6 +62,7 @@ def _init_brain_from_config():
 
     # Late imports to avoid circular deps
     from neo.core.brain import Brain
+    from neo.core.catalog import Catalog
     from neo.core.connectors import ConnectorRegistry
     from neo.core.consciousness import Consciousness
     from neo.core.discovery import discover_all
@@ -98,12 +99,15 @@ def _init_brain_from_config():
         active_channels=["web"],
     )
 
+    catalog = Catalog()
+
     _brain = Brain(
         consciousness=consciousness,
         personality=personality,
         memory=memory,
         connectors=connectors,
         registry=registry,
+        catalog=catalog,
         model=_config.get("model", "deepseek/deepseek-chat"),
     )
 

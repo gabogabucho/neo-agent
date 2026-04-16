@@ -140,12 +140,16 @@ def run(
             active_channels=["web"],
         )
 
+        from neo.core.catalog import Catalog
+        catalog = Catalog()
+
         brain = Brain(
             consciousness=consciousness,
             personality=personality,
             memory=memory,
             connectors=connectors,
             registry=registry,
+            catalog=catalog,
             model=config.get("model", "deepseek/deepseek-chat"),
         )
 
