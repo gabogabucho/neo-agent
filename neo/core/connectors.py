@@ -47,6 +47,11 @@ class ConnectorRegistry:
 
     def __init__(self):
         self._connectors: dict[str, Connector] = {}
+        self._tool_schemas: dict[str, dict] = {}
+
+    def set_tool_schemas(self, schemas: dict[str, dict]):
+        """Override tool schemas for specific tools (e.g. from handlers)."""
+        self._tool_schemas.update(schemas)
 
     def load(self, path: str | Path):
         """Load connectors from a YAML file."""
@@ -77,31 +82,50 @@ class ConnectorRegistry:
         ]
 
     def as_tools(self) -> list[dict]:
-        """Format connectors as LLM function-calling tools (OpenAI format)."""
+        """Format connectors as LLM function-calling tools (OpenAI format).
+
+        Uses custom schemas from set_tool_schemas() when available,
+        falls back to a generic schema otherwise.
+        """
         tools = []
         for connector in self._connectors.values():
             for action in connector.actions:
                 tool_name = f"{connector.name}__{action}"
-                tools.append(
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": tool_name,
-                            "description": (
-                                f"{connector.description} — {action}"
-                            ),
-                            "parameters": {
-                                "type": "object",
-                                "properties": {
-                                    "input": {
-                                        "type": "string",
-                                        "description": f"Input for {connector.name}.{action}",
-                                    }
+
+                # Use custom schema if registered, otherwise generic
+                custom = self._tool_schemas.get(tool_name)
+                if custom:
+                    tools.append(
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": tool_name,
+                                "description": custom["description"],
+                                "parameters": custom["parameters"],
+                            },
+                        }
+                    )
+                else:
+                    tools.append(
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": tool_name,
+                                "description": (
+                                    f"{connector.description} — {action}"
+                                ),
+                                "parameters": {
+                                    "type": "object",
+                                    "properties": {
+                                        "input": {
+                                            "type": "string",
+                                            "description": f"Input for {connector.name}.{action}",
+                                        }
+                                    },
                                 },
                             },
-                        },
-                    }
-                )
+                        }
+                    )
         return tools
 
     def parse_tool_name(self, tool_name: str) -> tuple[str, str]:

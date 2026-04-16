@@ -86,8 +86,8 @@ class Brain:
         except Exception as e:
             return {"message": f"I had trouble thinking: {e}", "tool_calls": []}
 
-        # 6. Process response
-        result = await self._process_response(response, session)
+        # 6. Tool use loop — if LLM called tools, execute and send results back
+        result = await self._tool_use_loop(response, messages, tools)
 
         # 7. Update session history
         session.add_message("user", message)
@@ -185,20 +185,41 @@ class Brain:
 
         return messages
 
-    async def _process_response(
-        self, response, session: Session
+    async def _tool_use_loop(
+        self,
+        response,
+        messages: list[dict],
+        tools: list[dict] | None,
+        max_iterations: int = 3,
     ) -> dict:
-        """Process LLM response — extract message, handle tool calls."""
-        choice = response.choices[0]
-        msg = choice.message
+        """Execute the tool use loop.
 
-        result = {
-            "message": msg.content or "",
-            "tool_calls": [],
-        }
+        Standard flow:
+        1. LLM responds with tool_calls
+        2. Execute tools, collect results
+        3. Send tool results back to LLM
+        4. LLM generates final text response
+        5. Repeat if LLM calls more tools (up to max_iterations)
 
-        # Handle tool calls (connector executions)
-        if msg.tool_calls:
+        Without this loop, tool results are lost and the user gets no response.
+        """
+        all_tool_calls = []
+
+        for _ in range(max_iterations):
+            choice = response.choices[0]
+            msg = choice.message
+
+            # No tool calls — we have the final text response
+            if not msg.tool_calls:
+                return {
+                    "message": msg.content or "",
+                    "tool_calls": all_tool_calls,
+                }
+
+            # Execute all tool calls
+            # First, add the assistant's message (with tool calls) to context
+            messages.append(msg.model_dump())
+
             for tool_call in msg.tool_calls:
                 func = tool_call.function
                 try:
@@ -213,7 +234,7 @@ class Brain:
                     tool_result = await self.connectors.execute(
                         connector_name, action, params
                     )
-                    result["tool_calls"].append(
+                    all_tool_calls.append(
                         {
                             "connector": connector_name,
                             "action": action,
@@ -221,11 +242,38 @@ class Brain:
                         }
                     )
                 except Exception as e:
-                    result["tool_calls"].append(
+                    tool_result = {"error": str(e)}
+                    all_tool_calls.append(
                         {"name": func.name, "error": str(e)}
                     )
 
-        return result
+                # Add tool result to messages for the LLM
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": json.dumps(tool_result),
+                    }
+                )
+
+            # Send tool results back to LLM for final response
+            try:
+                response = await acompletion(
+                    model=self.model,
+                    messages=messages,
+                    tools=tools,
+                    temperature=0.7,
+                    max_tokens=1024,
+                )
+            except Exception as e:
+                return {
+                    "message": f"I completed the action but had trouble responding: {e}",
+                    "tool_calls": all_tool_calls,
+                }
+
+        # Max iterations reached — return what we have
+        final_msg = response.choices[0].message.content or ""
+        return {"message": final_msg, "tool_calls": all_tool_calls}
 
     def load_flows(self, flows_dir: str | Path):
         """Load flow definitions from a directory of YAML files."""
