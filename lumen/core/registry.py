@@ -135,30 +135,32 @@ class Registry:
             "ACTIVE. I do NOT need to install anything for these.",
         ]
 
-        # Ready capabilities with inline instructions
+        # Ready capabilities — name + description + one-line action hint
         if all_ready:
             lines.append("\n### What I CAN do (READY — use immediately)")
+            lines.append(
+                "For detailed instructions on any skill, call "
+                "neo__read_skill with the skill name."
+            )
+            lines.append("")
 
             for c in all_ready:
-                lines.append(f"- **{c.name}** ({c.kind.value}): {c.description}")
+                hint = ""
+                # For skills, add a one-line action hint from metadata
+                if c.kind == CapabilityKind.SKILL:
+                    provides = c.provides
+                    if provides:
+                        hint = f" → uses: {', '.join(provides[:3])}"
+                    else:
+                        # Extract action hint from required connectors
+                        req_conns = c.requires.get("connectors", [])
+                        if req_conns:
+                            hint = f" → uses connectors: {', '.join(req_conns)}"
 
-                # For skills with SKILL.md, inject the content directly
-                skill_path = c.metadata.get("path")
-                if skill_path and c.kind == CapabilityKind.SKILL:
-                    try:
-                        from pathlib import Path
-
-                        content = Path(skill_path).read_text(encoding="utf-8")
-                        # Strip frontmatter, keep only instructions
-                        if content.startswith("---"):
-                            end = content.index("---", 3)
-                            content = content[end + 3:].strip()
-                        if content:
-                            # Indent skill instructions under the skill entry
-                            for instruction_line in content.split("\n")[:15]:
-                                lines.append(f"  {instruction_line}")
-                    except Exception:
-                        pass
+                lines.append(
+                    f"- **{c.name}** ({c.kind.value}): "
+                    f"{c.description}{hint}"
+                )
 
         # Gaps — things that need extension
         if all_gaps:

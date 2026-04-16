@@ -1,7 +1,8 @@
 ---
 name: scheduler
-description: "Schedule reminders and recurring tasks"
+description: "Schedule reminders and recurring tasks. Use task__create with due_date to save reminders."
 min_capability: tier-2
+provides: [task__create with due_date, task__list for pending reminders]
 requires:
   connectors: [task, memory]
 ---
