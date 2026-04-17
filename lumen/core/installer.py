@@ -16,8 +16,6 @@ import yaml
 
 from lumen.core.catalog import Catalog
 from lumen.core.connectors import ConnectorRegistry
-from lumen.core.discovery import discover_all
-from lumen.core.handlers import register_builtin_handlers
 from lumen.core.memory import Memory
 from lumen.core.module_manifest import (
     find_module_manifest_in_zip,
@@ -25,7 +23,6 @@ from lumen.core.module_manifest import (
     resolve_module_manifest_path,
     zip_manifest_root_prefix,
 )
-from lumen.core.registry import Registry
 
 
 # Where installed modules live
@@ -33,7 +30,7 @@ INSTALLED_DIR = Path(__file__).parent.parent / "modules"
 
 
 class Installer:
-    """Installs and uninstalls modules. Re-runs discovery after each operation."""
+    """Installs and uninstalls modules on disk."""
 
     def __init__(
         self,
@@ -192,17 +189,6 @@ class Installer:
         shutil.rmtree(module_dir)
 
         return {"status": "uninstalled", "name": name}
-
-    def rediscover(self) -> Registry:
-        """Re-run discovery after install/uninstall. Lumen becomes aware."""
-        registry = Registry()
-        discover_all(
-            registry=registry,
-            pkg_dir=self.pkg_dir,
-            connectors=self.connectors,
-            active_channels=["web"],
-        )
-        return registry
 
     def _generate_skill_md(self, module_info: dict) -> str:
         """Generate a default SKILL.md for a catalog module."""

@@ -1,5 +1,7 @@
 import tempfile
 import unittest
+import zipfile
+from io import BytesIO
 from pathlib import Path
 
 import yaml
@@ -12,6 +14,14 @@ from lumen.core.registry import CapabilityKind, Registry
 
 def _write_yaml(path: Path, payload: dict):
     path.write_text(yaml.dump(payload, sort_keys=False), encoding="utf-8")
+
+
+def _zip_bytes(entries: dict[str, str]) -> bytes:
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        for name, content in entries.items():
+            zf.writestr(name, content)
+    return buffer.getvalue()
 
 
 class ModuleManifestResolutionTests(unittest.TestCase):
@@ -105,6 +115,107 @@ class ModuleManifestResolutionTests(unittest.TestCase):
         self.assertEqual(
             Path(discovered.metadata["manifest_path"]).name, "manifest.yaml"
         )
+
+    def test_zip_install_supports_module_yaml(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg_dir = Path(tmp)
+            installer = Installer(
+                pkg_dir=pkg_dir,
+                connectors=ConnectorRegistry(),
+                memory=None,
+            )
+
+            result = installer.install_from_zip(
+                _zip_bytes(
+                    {
+                        "demo-zip/module.yaml": yaml.dump(
+                            {
+                                "name": "zip-module",
+                                "display_name": "ZIP Module",
+                                "description": "Installed from module.yaml",
+                                "version": "1.0.0",
+                            },
+                            sort_keys=False,
+                        ),
+                        "demo-zip/SKILL.md": "# ZIP Module\n",
+                    }
+                )
+            )
+
+            manifest_path = pkg_dir / "modules" / "zip-module" / "module.yaml"
+
+            self.assertEqual(result["status"], "installed")
+            self.assertTrue(manifest_path.exists())
+
+    def test_zip_install_prefers_module_yaml_over_manifest_yaml(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg_dir = Path(tmp)
+            installer = Installer(
+                pkg_dir=pkg_dir,
+                connectors=ConnectorRegistry(),
+                memory=None,
+            )
+
+            result = installer.install_from_zip(
+                _zip_bytes(
+                    {
+                        "dual-manifest/module.yaml": yaml.dump(
+                            {
+                                "name": "preferred-module",
+                                "display_name": "Preferred Module",
+                                "description": "Chosen from module.yaml",
+                            },
+                            sort_keys=False,
+                        ),
+                        "dual-manifest/manifest.yaml": yaml.dump(
+                            {
+                                "name": "fallback-module",
+                                "display_name": "Fallback Module",
+                                "description": "Should not win",
+                            },
+                            sort_keys=False,
+                        ),
+                    }
+                )
+            )
+
+            installed_dir = pkg_dir / "modules" / "preferred-module"
+
+            self.assertEqual(result["status"], "installed")
+            self.assertEqual(result["name"], "preferred-module")
+            self.assertTrue((installed_dir / "module.yaml").exists())
+            self.assertTrue((installed_dir / "manifest.yaml").exists())
+
+    def test_zip_install_falls_back_to_manifest_yaml(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg_dir = Path(tmp)
+            installer = Installer(
+                pkg_dir=pkg_dir,
+                connectors=ConnectorRegistry(),
+                memory=None,
+            )
+
+            result = installer.install_from_zip(
+                _zip_bytes(
+                    {
+                        "legacy/manifest.yaml": yaml.dump(
+                            {
+                                "name": "legacy-zip-module",
+                                "display_name": "Legacy ZIP Module",
+                                "description": "Installed from manifest.yaml",
+                            },
+                            sort_keys=False,
+                        ),
+                        "legacy/SKILL.md": "# Legacy ZIP Module\n",
+                    }
+                )
+            )
+
+            manifest_path = pkg_dir / "modules" / "legacy-zip-module" / "manifest.yaml"
+
+            self.assertEqual(result["status"], "installed")
+            self.assertEqual(result["name"], "legacy-zip-module")
+            self.assertTrue(manifest_path.exists())
 
 
 if __name__ == "__main__":

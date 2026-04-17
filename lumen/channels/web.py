@@ -16,7 +16,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from lumen.core.registry import CapabilityKind
-from lumen.core.runtime import bootstrap_runtime
+from lumen.core.runtime import bootstrap_runtime, refresh_runtime_registry
 from lumen.core.session import SessionManager
 
 
@@ -356,9 +356,8 @@ async def api_modules_install(name: str):
     installer = Installer(PKG_DIR, _brain.connectors, _brain.memory, _brain.catalog)
     result = installer.install_from_catalog(name)
 
-    # Re-discover — Lumen becomes aware of new capability
     if result["status"] == "installed":
-        _brain.registry = installer.rediscover()
+        refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, active_channels=["web"])
 
     return result
 
@@ -373,9 +372,8 @@ async def api_modules_uninstall(name: str):
     installer = Installer(PKG_DIR, _brain.connectors, _brain.memory, _brain.catalog)
     result = installer.uninstall(name)
 
-    # Re-discover — Lumen forgets the capability
     if result["status"] == "uninstalled":
-        _brain.registry = installer.rediscover()
+        refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, active_channels=["web"])
 
     return result
 
@@ -392,7 +390,7 @@ async def api_modules_upload(request: Request):
     result = installer.install_from_zip(body)
 
     if result["status"] == "installed":
-        _brain.registry = installer.rediscover()
+        refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, active_channels=["web"])
 
     return result
 

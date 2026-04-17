@@ -28,6 +28,37 @@ class RuntimeBootstrap:
     config: dict
 
 
+def refresh_runtime_registry(
+    brain: Brain,
+    *,
+    pkg_dir: Path,
+    active_channels: list[str] | None = None,
+) -> Registry:
+    """Refresh runtime discovery using the live runtime inputs.
+
+    This preserves the runtime-owned truth (connectors, active MCP state, and
+    active channels) instead of rebuilding discovery from installer-local data.
+    """
+    registry = Registry()
+    discover_all(
+        registry=registry,
+        pkg_dir=pkg_dir,
+        connectors=brain.connectors,
+        active_channels=active_channels or ["web"],
+        mcp_config=(
+            brain.mcp_manager.discovery_payload()
+            if getattr(brain, "mcp_manager", None)
+            else None
+        ),
+    )
+    brain.registry = registry
+
+    if getattr(brain, "marketplace", None) is not None:
+        brain.marketplace.sync_registry(registry)
+
+    return registry
+
+
 async def bootstrap_runtime(
     config: dict,
     *,

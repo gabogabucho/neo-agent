@@ -133,6 +133,12 @@ class Marketplace:
     def kits_installed(self) -> list[dict[str, Any]]:
         return self.snapshot()["kits_lumen"]["installed"]
 
+    def sync_registry(self, registry: Registry):
+        """Update runtime registry truth and invalidate cached projections."""
+        self.registry = registry
+        self._remote_cache = None
+        self._remote_cache_at = 0.0
+
     def _section_payload(
         self,
         key: str,
