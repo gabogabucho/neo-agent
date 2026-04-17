@@ -1,0 +1,19 @@
+intent: cancel-appointment
+triggers:
+  - "cancelar turno"
+  - "no puedo ir"
+  - "quiero cancelar"
+  - "borrar mi turno"
+
+slots:
+  client_name:
+    ask: "¿Tu nombre para encontrar el turno?"
+    type: text
+    required: true
+  confirmation:
+    ask: "Encontré tu turno. ¿Confirmás la cancelación?"
+    type: boolean
+    required: true
+
+on_complete: [task__complete, memory__write]
+interruption_policy: answer_and_resume

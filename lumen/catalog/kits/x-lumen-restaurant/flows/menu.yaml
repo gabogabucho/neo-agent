@@ -1,0 +1,12 @@
+intent: menu-inquiry
+triggers:
+  - "qué tienen"
+  - "el menú"
+  - "qué platos"
+  - "para comer"
+  - "opciones"
+  - "vegetariano"
+  - "sin gluten"
+  - "cuánto sale"
+
+interruption_policy: answer_and_resume

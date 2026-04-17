@@ -1,0 +1,22 @@
+intent: content-review
+triggers:
+  - "revisá esto"
+  - "corregí"
+  - "feedback"
+  - "qué le falta"
+  - "está bien esto"
+  - "mejorá"
+
+slots:
+  content:
+    ask: "Pegá el texto o decime de qué archivo se trata."
+    type: text
+    required: true
+  review_type:
+    ask: "¿Qué tipo de revisión? ¿Claridad, argumentación, estilo, todo?"
+    type: choice
+    options: [claridad, argumentación, estilo, completo]
+    required: false
+    default: completo
+
+interruption_policy: answer_and_resume

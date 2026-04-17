@@ -1,0 +1,24 @@
+name: x-lumen-dev
+type: kit
+display_name: "Dev"
+description: "Tu pair programmer. Navega código, revisa PRs y depura con contexto real."
+version: 1.0.0
+author: "Lumen Team"
+price: free
+min_capability: tier-2
+tags: [kit, personal, developer]
+onboarding_flow: flows/onboarding.yaml
+x-lumen:
+  mcps:
+    bundled:
+      - name: git
+        command: "uvx mcp-server-git"
+        purpose: "Leer historial, diffs y estructura del repositorio"
+      - name: filesystem
+        command: "uvx mcp-server-filesystem"
+        args: ["{{workspace_path}}"]
+        purpose: "Acceso al codebase local"
+    advisory:
+      - name: github-mcp
+        command: "npx -y @modelcontextprotocol/server-github"
+        purpose: "PRs, issues y documentación de GitHub"

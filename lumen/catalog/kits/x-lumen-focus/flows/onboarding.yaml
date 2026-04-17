@@ -1,0 +1,24 @@
+intent: kit-onboarding
+triggers: [kit-install]
+
+slots:
+  user_name:
+    ask: "¿Cómo te llamo?"
+    type: text
+    required: true
+  pomodoro_minutes:
+    ask: "¿Cuánto tiempo de trabajo por bloque? (default: 25 min)"
+    type: number
+    required: false
+    default: 25
+  break_minutes:
+    ask: "¿Y de descanso? (default: 5 min)"
+    type: number
+    required: false
+    default: 5
+
+on_complete: activate_kit_with_context
+
+first_message: |
+  Listo {{user_name}}. Bloques de {{pomodoro_minutes}} min, descansos de {{break_minutes}} min.
+  Cuando quieras arrancar, decime en qué vas a trabajar y largamos el primer bloque.

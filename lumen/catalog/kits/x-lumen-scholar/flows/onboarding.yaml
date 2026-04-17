@@ -1,0 +1,23 @@
+intent: kit-onboarding
+triggers: [kit-install]
+
+slots:
+  user_name:
+    ask: "¿Cómo te llamo?"
+    type: text
+    required: true
+  user_focus:
+    ask: "¿En qué área estás estudiando o investigando? (ej: biología molecular, historia medieval, derecho penal)"
+    type: text
+    required: true
+  local_notes_path:
+    ask: "¿Tenés apuntes o papers guardados en tu computadora? Si me das la carpeta, puedo trabajar con ellos directamente. (podés saltearte esto)"
+    type: path
+    required: false
+
+on_complete: activate_kit_with_context
+
+first_message: |
+  Hola {{user_name}}, soy Scholar. Estoy acá para pensar con vos sobre {{user_focus}}.
+  Tengo acceso a tus archivos locales{{#if local_notes_path}} en {{local_notes_path}}{{/if}} y voy a ir construyendo memoria de lo que trabajemos juntos.
+  ¿Arrancamos con algo concreto o querés contarme en qué estás?

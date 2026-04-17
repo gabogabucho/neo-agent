@@ -1,0 +1,33 @@
+intent: book-appointment
+triggers:
+  - "quiero sacar un turno"
+  - "reservar"
+  - "agendar"
+  - "turno"
+  - "cuando tienen lugar"
+  - "puedo ir"
+
+slots:
+  service:
+    ask: "¿Para qué servicio?"
+    options_from: services_and_prices
+    required: true
+  date:
+    ask: "¿Para qué día?"
+    type: date
+    required: true
+  time:
+    ask: "¿A qué hora preferís?"
+    type: time
+    required: true
+  client_name:
+    ask: "¿Tu nombre?"
+    type: text
+    required: true
+  confirmation:
+    ask: "Te anoto {{service}} el {{date}} a las {{time}}. ¿Confirmás?"
+    type: boolean
+    required: true
+
+on_complete: [task__create, memory__write]
+interruption_policy: answer_and_resume

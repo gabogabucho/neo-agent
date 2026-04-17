@@ -1,0 +1,10 @@
+intent: pricing-inquiry
+triggers:
+  - "cuánto sale"
+  - "precio"
+  - "cuánto cuesta"
+  - "qué ofrecen"
+  - "servicios"
+  - "lista de precios"
+
+interruption_policy: answer_and_resume

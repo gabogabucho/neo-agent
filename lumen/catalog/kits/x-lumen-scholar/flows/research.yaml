@@ -1,0 +1,22 @@
+intent: research-assistance
+triggers:
+  - "investigar"
+  - "buscar información sobre"
+  - "qué dice la literatura sobre"
+  - "explicame"
+  - "resumí"
+  - "analizá"
+
+slots:
+  topic:
+    ask: "¿Sobre qué tema específico?"
+    type: text
+    required: true
+  depth:
+    ask: "¿Necesitás una visión general o querés entrar en profundidad?"
+    type: choice
+    options: [general, profundo]
+    required: false
+    default: general
+
+interruption_policy: answer_and_resume

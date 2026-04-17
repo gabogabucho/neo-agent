@@ -1,0 +1,21 @@
+intent: start-pomodoro
+triggers:
+  - "arrancamos"
+  - "empezamos"
+  - "start"
+  - "pomodoro"
+  - "bloque"
+  - "vamos"
+
+slots:
+  task_description:
+    ask: "¿En qué vas a trabajar en este bloque?"
+    type: text
+    required: true
+
+on_complete: [task__create, memory__write]
+
+interruption_policy: answer_and_resume
+
+session_end_message: |
+  Bloque terminado. ¿Lo completaste? ¿Qué lograste?

@@ -1,0 +1,20 @@
+name: x-lumen-peluqueria
+type: kit
+display_name: "Peluquería"
+description: "Asistente completo para peluquerías y salones. Turnos, precios y atención al cliente."
+version: 1.0.0
+author: "Lumen Team"
+price: free
+min_capability: tier-2
+tags: [kit, vertical, negocio]
+onboarding_flow: flows/onboarding.yaml
+x-lumen:
+  mcps:
+    bundled:
+      - name: filesystem
+        command: "uvx mcp-server-filesystem"
+        args: ["{{user_home}}"]
+        purpose: "Guardar y leer datos del negocio, turnos y clientes"
+    advisory:
+      - name: calendar-mcp
+        purpose: "Si tenés Google Calendar, sincroniza los turnos automáticamente"

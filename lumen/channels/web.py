@@ -6,9 +6,17 @@ Routing logic:
   /  → config and awakened? → /dashboard
 """
 
+import base64
+import hashlib
 import json
+import secrets
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
+from time import time
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request as UrlRequest, urlopen
 
 import yaml
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
@@ -28,6 +36,17 @@ _config: dict = {}
 LUMEN_DIR = Path.home() / ".lumen"
 CONFIG_PATH = LUMEN_DIR / "config.yaml"
 PKG_DIR = Path(__file__).parent.parent
+OPENROUTER_AUTH_URL = "https://openrouter.ai/auth"
+OPENROUTER_KEYS_URL = "https://openrouter.ai/api/v1/auth/keys"
+OPENROUTER_CURATED_MODELS = {
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "deepseek/deepseek-chat:free",
+    "mistralai/mistral-7b-instruct:free",
+    "google/gemma-3-27b-it:free",
+}
+OPENROUTER_STATE_TTL_SECONDS = 600
+_oauth_state_store: dict[str, dict] = {}
+_oauth_state_lock = threading.Lock()
 
 
 def configure(brain, locale: dict, config: dict):
@@ -40,6 +59,24 @@ def configure(brain, locale: dict, config: dict):
 
 def _has_config() -> bool:
     return CONFIG_PATH.exists()
+
+
+def _load_config() -> dict:
+    if not CONFIG_PATH.exists():
+        return {}
+    loaded = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _merge_save_config(updates: dict) -> dict:
+    merged = _load_config()
+    merged.update({k: v for k, v in updates.items() if v is not None})
+    LUMEN_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG_PATH.write_text(
+        yaml.dump(merged, default_flow_style=False),
+        encoding="utf-8",
+    )
+    return merged
 
 
 def _has_awakened() -> bool:
@@ -61,7 +98,7 @@ async def _init_brain_from_config():
     if not _has_config():
         return False
 
-    _config = yaml.safe_load(CONFIG_PATH.read_text())
+    _config = _load_config()
 
     runtime = await bootstrap_runtime(
         _config,
@@ -74,6 +111,64 @@ async def _init_brain_from_config():
     _config = runtime.config
 
     return True
+
+
+def _base64url_sha256(value: str) -> str:
+    digest = hashlib.sha256(value.encode("utf-8")).digest()
+    return base64.urlsafe_b64encode(digest).decode("utf-8").rstrip("=")
+
+
+def _cleanup_expired_oauth_states(now: float | None = None):
+    now = now or time()
+    expired = [
+        key
+        for key, payload in _oauth_state_store.items()
+        if payload.get("expires_at", 0) <= now
+    ]
+    for key in expired:
+        _oauth_state_store.pop(key, None)
+
+
+def _store_oauth_state(state: str, payload: dict):
+    with _oauth_state_lock:
+        _cleanup_expired_oauth_states()
+        _oauth_state_store[state] = payload
+
+
+def _pop_oauth_state(state: str) -> dict | None:
+    with _oauth_state_lock:
+        _cleanup_expired_oauth_states()
+        return _oauth_state_store.pop(state, None)
+
+
+def _exchange_openrouter_code(code: str, code_verifier: str) -> str:
+    payload = json.dumps(
+        {
+            "code": code,
+            "code_verifier": code_verifier,
+            "code_challenge_method": "S256",
+        }
+    ).encode("utf-8")
+    request = UrlRequest(
+        OPENROUTER_KEYS_URL,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urlopen(request, timeout=15) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"OpenRouter key exchange failed: {details}") from exc
+    except URLError as exc:
+        raise RuntimeError("OpenRouter key exchange failed: network error") from exc
+
+    api_key = body.get("key")
+    if not api_key:
+        raise RuntimeError("OpenRouter key exchange failed: missing API key")
+    return api_key
 
 
 @asynccontextmanager
@@ -142,8 +237,7 @@ async def api_setup(request: Request):
         if body.get("api_key"):
             config["api_key"] = body["api_key"]
 
-        LUMEN_DIR.mkdir(parents=True, exist_ok=True)
-        CONFIG_PATH.write_text(yaml.dump(config, default_flow_style=False))
+        _merge_save_config(config)
 
         # Initialize brain with new config
         await _init_brain_from_config()
@@ -158,6 +252,85 @@ async def api_setup(request: Request):
             status_code=500,
             content={"status": "error", "error": str(e)},
         )
+
+
+@app.get("/oauth/openrouter/start")
+async def openrouter_oauth_start(
+    request: Request,
+    language: str = "en",
+    model: str = "deepseek/deepseek-chat:free",
+    port: int = 3000,
+):
+    """Start a local-only OpenRouter PKCE flow."""
+    if model not in OPENROUTER_CURATED_MODELS:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "error": "Unsupported OpenRouter model."},
+        )
+
+    selected_language = language if language in {"en", "es"} else "en"
+    code_verifier = secrets.token_urlsafe(64)
+    state = secrets.token_urlsafe(32)
+    callback_url = str(request.url_for("openrouter_oauth_callback"))
+
+    _store_oauth_state(
+        state,
+        {
+            "code_verifier": code_verifier,
+            "model": model,
+            "language": selected_language,
+            "port": port,
+            "expires_at": time() + OPENROUTER_STATE_TTL_SECONDS,
+        },
+    )
+
+    params = urlencode(
+        {
+            "callback_url": callback_url,
+            "code_challenge": _base64url_sha256(code_verifier),
+            "code_challenge_method": "S256",
+            "state": state,
+        }
+    )
+    return RedirectResponse(url=f"{OPENROUTER_AUTH_URL}?{params}")
+
+
+@app.get("/oauth/openrouter/callback", name="openrouter_oauth_callback")
+async def openrouter_oauth_callback(
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+):
+    """Complete a local-only OpenRouter PKCE flow and save config."""
+    if error:
+        return RedirectResponse(url=f"/setup?oauth_error={error}")
+    if not code or not state:
+        return RedirectResponse(url="/setup?oauth_error=missing_code_or_state")
+
+    oauth_state = _pop_oauth_state(state)
+    if not oauth_state:
+        return RedirectResponse(url="/setup?oauth_error=invalid_or_expired_state")
+
+    try:
+        api_key = _exchange_openrouter_code(code, oauth_state["code_verifier"])
+        _merge_save_config(
+            {
+                "language": oauth_state.get("language", "en"),
+                "port": oauth_state.get("port", 3000),
+                "model": oauth_state["model"],
+                "api_key": api_key,
+                "api_key_env": "OPENROUTER_API_KEY",
+            }
+        )
+
+        await _init_brain_from_config()
+
+        if _brain and _brain.memory._db is None:
+            await _brain.memory.init()
+    except Exception as exc:
+        return RedirectResponse(url=f"/setup?oauth_error={type(exc).__name__}")
+
+    return RedirectResponse(url="/")
 
 
 @app.get("/dashboard", response_class=HTMLResponse)

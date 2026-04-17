@@ -1,6 +1,68 @@
-# Lumen Module Catalog — available modules that can be installed
+# Lumen Module Catalog — available modules and kits
 # Lumen queries this when it detects a capability gap.
-# Each entry maps to a module directory in catalog/modules/
+# Kits (type: kit) define a complete identity for Lumen — only one can be active at a time.
+# Modules are utilities that extend Lumen's capabilities.
+
+kits:
+  - name: x-lumen-personal
+    type: kit
+    display_name: "Lumen Personal"
+    description: "Asistente personal de uso general. Tareas, notas, búsquedas y lo que necesites."
+    version: "1.0.0"
+    author: "Lumen Team"
+    price: free
+    tags: [kit, personal]
+    path: kits/x-lumen-personal
+
+  - name: x-lumen-scholar
+    type: kit
+    display_name: "Scholar"
+    description: "Tu compañero académico. Investiga, organiza y estudia más profundo."
+    version: "1.0.0"
+    author: "Lumen Team"
+    price: free
+    tags: [kit, personal, academic]
+    path: kits/x-lumen-scholar
+
+  - name: x-lumen-focus
+    type: kit
+    display_name: "Focus"
+    description: "Productividad profunda. Pomodoro, planificación y gestión de energía."
+    version: "1.0.0"
+    author: "Lumen Team"
+    price: free
+    tags: [kit, personal, productivity]
+    path: kits/x-lumen-focus
+
+  - name: x-lumen-dev
+    type: kit
+    display_name: "Dev"
+    description: "Tu pair programmer. Navega código, revisa PRs y depura con contexto real."
+    version: "1.0.0"
+    author: "Lumen Team"
+    price: free
+    tags: [kit, personal, developer]
+    path: kits/x-lumen-dev
+
+  - name: x-lumen-peluqueria
+    type: kit
+    display_name: "Peluquería"
+    description: "Asistente completo para peluquerías y salones. Turnos, precios y atención al cliente."
+    version: "1.0.0"
+    author: "Lumen Team"
+    price: free
+    tags: [kit, vertical, negocio]
+    path: kits/x-lumen-peluqueria
+
+  - name: x-lumen-restaurant
+    type: kit
+    display_name: "Restaurant"
+    description: "Asistente para restaurantes y bares. Reservas, menú, pedidos y delivery."
+    version: "1.0.0"
+    author: "Lumen Team"
+    price: free
+    tags: [kit, vertical, negocio]
+    path: kits/x-lumen-restaurant
 
 modules:
   - name: scheduler

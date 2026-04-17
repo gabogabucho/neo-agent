@@ -1,0 +1,20 @@
+intent: daily-planning
+triggers:
+  - "planificar el día"
+  - "qué hago hoy"
+  - "organizar tareas"
+  - "priorizar"
+  - "planning"
+
+slots:
+  available_hours:
+    ask: "¿Cuántas horas tenés disponibles hoy?"
+    type: number
+    required: false
+  top_priority:
+    ask: "¿Cuál es lo más importante que tiene que pasar hoy sí o sí?"
+    type: text
+    required: true
+
+on_complete: [task__create]
+interruption_policy: answer_and_resume

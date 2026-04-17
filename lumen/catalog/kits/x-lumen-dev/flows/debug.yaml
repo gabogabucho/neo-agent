@@ -1,0 +1,20 @@
+intent: debug-session
+triggers:
+  - "tengo un bug"
+  - "no funciona"
+  - "error"
+  - "debuggear"
+  - "no entiendo por qué"
+  - "roto"
+
+slots:
+  error_description:
+    ask: "¿Qué está pasando? Pegá el error o describilo."
+    type: text
+    required: true
+  context:
+    ask: "¿En qué parte del código está? (archivo, función, o pegá el snippet)"
+    type: text
+    required: false
+
+interruption_policy: answer_and_resume

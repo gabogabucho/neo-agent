@@ -1,0 +1,32 @@
+intent: make-reservation
+triggers:
+  - "reserva"
+  - "reservar mesa"
+  - "quiero una mesa"
+  - "tienen lugar"
+  - "para cuántos"
+
+slots:
+  party_size:
+    ask: "¿Para cuántas personas?"
+    type: number
+    required: true
+  date:
+    ask: "¿Para qué fecha?"
+    type: date
+    required: true
+  time:
+    ask: "¿A qué hora?"
+    type: time
+    required: true
+  client_name:
+    ask: "¿A nombre de quién?"
+    type: text
+    required: true
+  confirmation:
+    ask: "Mesa para {{party_size}} el {{date}} a las {{time}} a nombre de {{client_name}}. ¿Confirmamos?"
+    type: boolean
+    required: true
+
+on_complete: [task__create, memory__write]
+interruption_policy: answer_and_resume

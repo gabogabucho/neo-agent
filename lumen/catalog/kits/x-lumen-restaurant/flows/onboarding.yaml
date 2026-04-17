@@ -1,0 +1,26 @@
+intent: kit-onboarding
+triggers: [kit-install]
+
+slots:
+  business_name:
+    ask: "¿Cómo se llama tu restaurante o bar?"
+    type: text
+    required: true
+  business_hours:
+    ask: "¿Cuáles son los horarios? (ej: Martes a domingo, 12 a 15hs y 20 a 23hs)"
+    type: text
+    required: true
+  menu_summary:
+    ask: "Contame el menú o los platos principales con precios. (podés pegar una lista)"
+    type: text
+    required: true
+  seating_capacity:
+    ask: "¿Cuántas personas entran en el local?"
+    type: number
+    required: false
+
+on_complete: activate_kit_with_context
+
+first_message: |
+  Todo listo. Soy el asistente de {{business_name}}.
+  Ya conozco el menú y los horarios. ¿Lo probamos con una consulta de cliente?

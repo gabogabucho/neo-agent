@@ -1,0 +1,26 @@
+name: x-lumen-scholar
+type: kit
+display_name: "Scholar"
+description: "Tu compañero académico. Investiga, organiza y estudia más profundo."
+version: 1.0.0
+author: "Lumen Team"
+price: free
+min_capability: tier-1
+tags: [kit, personal, academic]
+onboarding_flow: flows/onboarding.yaml
+x-lumen:
+  mcps:
+    bundled:
+      - name: filesystem
+        command: "uvx mcp-server-filesystem"
+        args: ["{{user_home}}"]
+        purpose: "Acceso a apuntes, papers y documentos locales"
+      - name: memory
+        command: "npx -y @modelcontextprotocol/server-memory"
+        purpose: "Memoria persistente de conceptos y progreso de estudio"
+      - name: fetch
+        command: "uvx mcp-fetch"
+        purpose: "Buscar y leer recursos académicos en la web"
+    advisory:
+      - name: obsidian-mcp
+        purpose: "Si usás Obsidian, conecta tu vault directamente"

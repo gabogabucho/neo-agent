@@ -1,0 +1,23 @@
+intent: kit-onboarding
+triggers: [kit-install]
+
+slots:
+  user_name:
+    ask: "¿Cómo te llamo?"
+    type: text
+    required: true
+  primary_language:
+    ask: "¿Lenguaje principal con el que trabajás?"
+    type: text
+    required: true
+  workspace_path:
+    ask: "¿Ruta del workspace o proyecto principal? (podés saltearte esto)"
+    type: path
+    required: false
+
+on_complete: activate_kit_with_context
+
+first_message: |
+  Listo {{user_name}}. Trabajo con {{primary_language}}{{#if workspace_path}}, repo en {{workspace_path}}{{/if}}.
+  Puedo navegar el código, revisar commits, ayudarte a debuggear o discutir arquitectura.
+  ¿En qué estamos?

@@ -1,0 +1,23 @@
+name: x-lumen-focus
+type: kit
+display_name: "Focus"
+description: "Productividad profunda. Pomodoro, planificación y gestión de energía."
+version: 1.0.0
+author: "Lumen Team"
+price: free
+min_capability: tier-1
+tags: [kit, personal, productivity]
+onboarding_flow: flows/onboarding.yaml
+x-lumen:
+  mcps:
+    bundled:
+      - name: time
+        command: "uvx mcp-server-time"
+        purpose: "Hora actual, timers y manejo de zonas horarias"
+      - name: filesystem
+        command: "uvx mcp-server-filesystem"
+        args: ["{{user_home}}"]
+        purpose: "Leer y guardar listas de tareas y notas de sesión"
+    advisory:
+      - name: notion-mcp
+        purpose: "Si usás Notion, sincroniza tus tareas y proyectos"

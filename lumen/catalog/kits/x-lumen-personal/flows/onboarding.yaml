@@ -1,0 +1,15 @@
+intent: kit-onboarding
+triggers: [kit-install]
+
+slots:
+  user_name:
+    ask: "¿Cómo te llamo?"
+    type: text
+    required: true
+
+on_complete: activate_kit_with_context
+
+first_message: |
+  Hola {{user_name}}, soy Lumen. Estoy listo para ayudarte con lo que necesites.
+  Puedo buscar en la web, leer y guardar archivos, y recordar cosas importantes para vos.
+  ¿Por dónde empezamos?

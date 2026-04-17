@@ -1,0 +1,23 @@
+intent: kit-onboarding
+triggers: [kit-install]
+
+slots:
+  business_name:
+    ask: "¿Cómo se llama tu peluquería o salón?"
+    type: text
+    required: true
+  business_hours:
+    ask: "¿Cuáles son los horarios de atención? (ej: Lunes a sábado 9 a 19hs)"
+    type: text
+    required: true
+  services_and_prices:
+    ask: "¿Qué servicios ofrecen y a qué precio? (ej: Corte $3000, Tinte $6000, Barba $1500)"
+    type: text
+    required: true
+
+on_complete: activate_kit_with_context
+
+first_message: |
+  Perfecto. Soy el asistente de {{business_name}}.
+  Ya sé los horarios y los servicios. Estoy listo para atender consultas de tus clientes.
+  ¿Probamos? Escribí como si fueras un cliente nuevo.
