@@ -257,6 +257,109 @@ class MarketplaceTests(unittest.TestCase):
             template.index('id="tab-skills"'),
         )
 
+    def test_dashboard_renders_configured_active_personality(self):
+        original_brain = web._brain
+        original_config = web._config
+        original_locale = web._locale
+        original_has_config = web._has_config
+        original_init_brain = web._init_brain_from_config
+
+        web._config = {
+            "language": "en",
+            "model": "demo-model",
+            "active_personality": "demo-personality",
+        }
+        web._locale = {}
+        web._brain = type(
+            "BrainStub",
+            (),
+            {
+                "connectors": type("ConnectorsStub", (), {"list": lambda self: []})(),
+                "flows": [],
+                "registry": type(
+                    "RegistryStub",
+                    (),
+                    {"list_by_kind": lambda self, kind: []},
+                )(),
+                "personality": type(
+                    "PersonalityStub",
+                    (),
+                    {"current": lambda self: {"identity": {"name": "Runtime Lumen"}}},
+                )(),
+            },
+        )()
+
+        async def _noop_init():
+            return True
+
+        web._has_config = lambda: True
+        web._init_brain_from_config = _noop_init
+
+        try:
+            client = TestClient(web.app)
+            response = client.get("/dashboard")
+        finally:
+            web._brain = original_brain
+            web._config = original_config
+            web._locale = original_locale
+            web._has_config = original_has_config
+            web._init_brain_from_config = original_init_brain
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("demo-personality", response.text)
+
+    def test_dashboard_falls_back_to_runtime_personality_name_when_no_active_module(
+        self,
+    ):
+        original_brain = web._brain
+        original_config = web._config
+        original_locale = web._locale
+        original_has_config = web._has_config
+        original_init_brain = web._init_brain_from_config
+
+        web._config = {
+            "language": "en",
+            "model": "demo-model",
+        }
+        web._locale = {}
+        web._brain = type(
+            "BrainStub",
+            (),
+            {
+                "connectors": type("ConnectorsStub", (), {"list": lambda self: []})(),
+                "flows": [],
+                "registry": type(
+                    "RegistryStub",
+                    (),
+                    {"list_by_kind": lambda self, kind: []},
+                )(),
+                "personality": type(
+                    "PersonalityStub",
+                    (),
+                    {"current": lambda self: {"identity": {"name": "Locale Lumen"}}},
+                )(),
+            },
+        )()
+
+        async def _noop_init():
+            return True
+
+        web._has_config = lambda: True
+        web._init_brain_from_config = _noop_init
+
+        try:
+            client = TestClient(web.app)
+            response = client.get("/dashboard")
+        finally:
+            web._brain = original_brain
+            web._config = original_config
+            web._locale = original_locale
+            web._has_config = original_has_config
+            web._init_brain_from_config = original_init_brain
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Locale Lumen", response.text)
+
 
 if __name__ == "__main__":
     unittest.main()

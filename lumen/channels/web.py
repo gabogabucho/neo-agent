@@ -264,6 +264,20 @@ def _mark_awakened():
     (LUMEN_DIR / ".awakened").write_text("1")
 
 
+def _current_dashboard_personality() -> str:
+    active_personality = _config.get("active_personality")
+    if active_personality:
+        return str(active_personality)
+
+    if _brain is not None:
+        identity = (_brain.personality.current() or {}).get("identity") or {}
+        personality_name = identity.get("name")
+        if personality_name:
+            return str(personality_name)
+
+    return "default"
+
+
 async def _init_brain_from_config():
     """Lazy brain initialization — runs once after web setup saves config."""
     global _brain, _locale, _config
@@ -548,6 +562,7 @@ async def dashboard(request: Request):
             "ui": ui,
             "model": _config.get("model", "not configured"),
             "language": _config.get("language", "en"),
+            "current_personality": _current_dashboard_personality(),
             "version": "0.1.0",
             "connectors_count": len(_brain.connectors.list()) if _brain else 0,
             "flows_count": len(_brain.flows) if _brain else 0,
