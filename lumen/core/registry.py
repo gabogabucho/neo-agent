@@ -23,11 +23,11 @@ class CapabilityKind(str, Enum):
 
 
 class CapabilityStatus(str, Enum):
-    READY = "ready"              # Fully functional
-    AVAILABLE = "available"      # Declared but not configured
+    READY = "ready"  # Fully functional
+    AVAILABLE = "available"  # Declared but not configured
     MISSING_HANDLER = "no_handler"  # Connector without implementation
-    MISSING_DEPS = "missing_deps"   # Requirements not met
-    ERROR = "error"              # Failed to load/connect
+    MISSING_DEPS = "missing_deps"  # Requirements not met
+    ERROR = "error"  # Failed to load/connect
 
 
 @dataclass
@@ -55,6 +55,7 @@ class Capability:
             "provides": self.provides,
             "requires": self.requires,
             "min_capability": self.min_capability,
+            "metadata": self.metadata,
         }
 
 
@@ -93,9 +94,7 @@ class Registry:
         return self._capabilities.get(f"{kind.value}:{name}")
 
     def list_by_kind(self, kind: CapabilityKind) -> list[Capability]:
-        return [
-            c for c in self._capabilities.values() if c.kind == kind
-        ]
+        return [c for c in self._capabilities.values() if c.kind == kind]
 
     def ready(self) -> list[Capability]:
         """Everything that's fully functional."""
@@ -156,18 +155,22 @@ class Registry:
                         req_conns = c.requires.get("connectors", [])
                         if req_conns:
                             hint = f" → uses connectors: {', '.join(req_conns)}"
+                elif c.kind == CapabilityKind.MCP:
+                    tools = c.metadata.get("tools", [])
+                    if tools:
+                        hint = f" → connected tools: {', '.join(tools[:5])}"
 
-                lines.append(
-                    f"- **{c.name}** ({c.kind.value}): "
-                    f"{c.description}{hint}"
-                )
+                lines.append(f"- **{c.name}** ({c.kind.value}): {c.description}{hint}")
 
         # Gaps — things that need extension
         if all_gaps:
             lines.append("\n### What I CANNOT do yet (needs extension)")
             for gap in all_gaps:
                 reason = gap.status.value.replace("_", " ")
-                lines.append(f"- {gap.name}: {gap.description} [{reason}]")
+                detail = ""
+                if gap.kind == CapabilityKind.MCP and gap.metadata.get("error"):
+                    detail = f" — {gap.metadata['error']}"
+                lines.append(f"- {gap.name}: {gap.description} [{reason}]{detail}")
             lines.append(
                 "\nFor these, explain what's missing and suggest "
                 "installing a module from the catalog."

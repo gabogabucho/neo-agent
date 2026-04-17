@@ -79,7 +79,10 @@ def _discover_skill_file(registry: Registry, skill_file: Path, fallback_name: st
                 provides=frontmatter.get("provides", []),
                 requires=frontmatter.get("requires", {}),
                 min_capability=frontmatter.get("min_capability", "tier-1"),
-                metadata={"level": frontmatter.get("level", 1), "path": str(skill_file)},
+                metadata={
+                    "level": frontmatter.get("level", 1),
+                    "path": str(skill_file),
+                },
             )
         )
     except Exception:
@@ -114,9 +117,7 @@ def _discover_skills(registry: Registry, skills_dir: Path):
                     status=CapabilityStatus.READY,
                     provides=frontmatter.get("provides", []),
                     requires=requires,
-                    min_capability=frontmatter.get(
-                        "min_capability", "tier-1"
-                    ),
+                    min_capability=frontmatter.get("min_capability", "tier-1"),
                     metadata={
                         "level": level,
                         "path": str(skill_file),
@@ -165,9 +166,7 @@ def _discover_connectors(registry: Registry, connectors: ConnectorRegistry):
         has_handlers = bool(connector._handlers)
 
         status = (
-            CapabilityStatus.READY
-            if has_handlers
-            else CapabilityStatus.MISSING_HANDLER
+            CapabilityStatus.READY if has_handlers else CapabilityStatus.MISSING_HANDLER
         )
 
         registry.register(
@@ -219,9 +218,7 @@ def _discover_modules(registry: Registry, modules_dir: Path):
                         "display_name": manifest.get("display_name", name),
                         "version": manifest.get("version", "0.0.0"),
                         "author": manifest.get("author", ""),
-                        "min_capability": manifest.get(
-                            "min_capability", "tier-1"
-                        ),
+                        "min_capability": manifest.get("min_capability", "tier-1"),
                     },
                 )
             )
@@ -260,16 +257,25 @@ def _discover_mcps(registry: Registry, mcp_config: dict):
     """Register MCP servers from config."""
     servers = mcp_config.get("servers", {})
     for name, config in servers.items():
+        status_name = config.get("status", CapabilityStatus.AVAILABLE.value)
+        try:
+            status = CapabilityStatus(status_name)
+        except ValueError:
+            status = CapabilityStatus.ERROR
+
         registry.register(
             Capability(
                 kind=CapabilityKind.MCP,
                 name=name,
                 description=config.get("description", f"MCP server: {name}"),
-                status=CapabilityStatus.AVAILABLE,
-                provides=config.get("provides", []),
+                status=status,
+                provides=config.get("tools", []),
                 metadata={
                     "command": config.get("command"),
+                    "args": config.get("args", []),
                     "url": config.get("url"),
+                    "tools": config.get("tools", []),
+                    "error": config.get("error"),
                 },
             )
         )

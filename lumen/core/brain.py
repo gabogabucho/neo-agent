@@ -42,6 +42,7 @@ class Brain:
         catalog: Catalog | None = None,
         model: str = "deepseek/deepseek-chat",
         flows: list[dict] | None = None,
+        mcp_manager=None,
     ):
         self.consciousness = consciousness
         self.personality = personality
@@ -51,6 +52,7 @@ class Brain:
         self.catalog = catalog or Catalog()
         self.model = model
         self.flows = flows or []
+        self.mcp_manager = mcp_manager
 
     async def think(self, message: str, session: Session) -> dict:
         """Receive message -> assemble context -> LLM decides -> response."""
@@ -71,8 +73,7 @@ class Brain:
             "body": self.registry.as_context(),
             "catalog": self.catalog.as_context(
                 installed_names={
-                    c.name
-                    for c in self.registry.list_by_kind(CapabilityKind.MODULE)
+                    c.name for c in self.registry.list_by_kind(CapabilityKind.MODULE)
                 }
             ),
             "active_flow": session.active_flow,
@@ -277,19 +278,15 @@ class Brain:
         # Active flow context — slot filling instructions
         if context["active_flow"]:
             flow = context["active_flow"]
-            system_parts.append(
-                f"\n## Current Task: {flow.get('intent', 'unknown')}"
-            )
-            system_parts.append(
-                f"Filled slots: {json.dumps(context['filled_slots'])}"
-            )
+            system_parts.append(f"\n## Current Task: {flow.get('intent', 'unknown')}")
+            system_parts.append(f"Filled slots: {json.dumps(context['filled_slots'])}")
 
             pending = context["pending_slots"]
             if pending:
                 next_slot = pending[0]
                 system_parts.append(
                     f"Next slot to fill: '{next_slot['name']}' "
-                    f"— ask: \"{next_slot.get('ask', '')}\""
+                    f'— ask: "{next_slot.get("ask", "")}"'
                 )
                 system_parts.append(
                     "Extract slot values from the user's message if possible. "
@@ -424,16 +421,21 @@ class Brain:
                         all_tool_calls.append(
                             {"name": func.name, "result": tool_result}
                         )
+                    elif self.connectors.has_tool(func.name):
+                        params = json.loads(func.arguments) if func.arguments else {}
+                        params = self._coerce_args(params, func.name, tools)
+                        tool_result = await self.connectors.execute_tool(
+                            func.name, params
+                        )
+                        all_tool_calls.append(
+                            {"name": func.name, "result": tool_result}
+                        )
                     else:
                         # Connector tools
                         connector_name, action = self.connectors.parse_tool_name(
                             func.name
                         )
-                        params = (
-                            json.loads(func.arguments)
-                            if func.arguments
-                            else {}
-                        )
+                        params = json.loads(func.arguments) if func.arguments else {}
                         params = self._coerce_args(params, func.name, tools)
                         tool_result = await self.connectors.execute(
                             connector_name, action, params
@@ -447,9 +449,7 @@ class Brain:
                         )
                 except Exception as e:
                     tool_result = {"error": str(e)}
-                    all_tool_calls.append(
-                        {"name": func.name, "error": str(e)}
-                    )
+                    all_tool_calls.append({"name": func.name, "error": str(e)})
 
                 # Add tool result to messages for the LLM
                 messages.append(

@@ -7,7 +7,6 @@ Routing logic:
 """
 
 import json
-import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -16,6 +15,8 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from lumen.core.registry import CapabilityKind
+from lumen.core.runtime import bootstrap_runtime
 from lumen.core.session import SessionManager
 
 
@@ -50,7 +51,7 @@ def _mark_awakened():
     (LUMEN_DIR / ".awakened").write_text("1")
 
 
-def _init_brain_from_config():
+async def _init_brain_from_config():
     """Lazy brain initialization — runs once after web setup saves config."""
     global _brain, _locale, _config
 
@@ -60,65 +61,17 @@ def _init_brain_from_config():
     if not _has_config():
         return False
 
-    # Late imports to avoid circular deps
-    from lumen.core.brain import Brain
-    from lumen.core.catalog import Catalog
-    from lumen.core.connectors import ConnectorRegistry
-    from lumen.core.consciousness import Consciousness
-    from lumen.core.discovery import discover_all
-    from lumen.core.handlers import register_builtin_handlers
-    from lumen.core.memory import Memory
-    from lumen.core.personality import Personality
-    from lumen.core.registry import Registry
-
     _config = yaml.safe_load(CONFIG_PATH.read_text())
 
-    # Set API key in environment
-    if _config.get("api_key") and _config.get("api_key_env"):
-        os.environ[_config["api_key_env"]] = _config["api_key"]
-
-    consciousness = Consciousness()
-
-    lang = _config.get("language", "en")
-    personality = Personality(PKG_DIR / "locales" / lang / "personality.yaml")
-
-    memory = Memory(LUMEN_DIR / "memory.db")
-
-    connectors = ConnectorRegistry()
-    built_in_path = PKG_DIR / "connectors" / "built-in.yaml"
-    if built_in_path.exists():
-        connectors.load(built_in_path)
-
-    register_builtin_handlers(connectors, memory)
-
-    registry = Registry()
-    discover_all(
-        registry=registry,
+    runtime = await bootstrap_runtime(
+        _config,
         pkg_dir=PKG_DIR,
-        connectors=connectors,
+        lumen_dir=LUMEN_DIR,
         active_channels=["web"],
     )
-
-    catalog = Catalog()
-
-    _brain = Brain(
-        consciousness=consciousness,
-        personality=personality,
-        memory=memory,
-        connectors=connectors,
-        registry=registry,
-        catalog=catalog,
-        model=_config.get("model", "deepseek/deepseek-chat"),
-    )
-
-    # Load flows
-    flows_dir = PKG_DIR / "locales" / lang / "flows"
-    _brain.load_flows(flows_dir)
-
-    # Load UI locale
-    ui_path = PKG_DIR / "locales" / lang / "ui.yaml"
-    if ui_path.exists():
-        _locale = yaml.safe_load(ui_path.read_text(encoding="utf-8")) or {}
+    _brain = runtime.brain
+    _locale = runtime.locale
+    _config = runtime.config
 
     return True
 
@@ -130,6 +83,8 @@ async def lifespan(app: FastAPI):
         await _brain.memory.init()
     yield
     if _brain:
+        if getattr(_brain, "mcp_manager", None):
+            await _brain.mcp_manager.close()
         await _brain.memory.close()
 
 
@@ -148,7 +103,7 @@ async def root(request: Request):
     if not _has_config():
         return templates.TemplateResponse(request, "setup.html")
 
-    _init_brain_from_config()
+    await _init_brain_from_config()
 
     # Init memory if brain just loaded
     if _brain and _brain.memory._db is None:
@@ -191,7 +146,7 @@ async def api_setup(request: Request):
         CONFIG_PATH.write_text(yaml.dump(config, default_flow_style=False))
 
         # Initialize brain with new config
-        _init_brain_from_config()
+        await _init_brain_from_config()
 
         if _brain and _brain.memory._db is None:
             await _brain.memory.init()
@@ -211,7 +166,7 @@ async def dashboard(request: Request):
     if not _has_config():
         return RedirectResponse(url="/")
 
-    _init_brain_from_config()
+    await _init_brain_from_config()
 
     ui = _locale.get("dashboard", {})
     return templates.TemplateResponse(
@@ -224,6 +179,9 @@ async def dashboard(request: Request):
             "version": "0.1.0",
             "connectors_count": len(_brain.connectors.list()) if _brain else 0,
             "flows_count": len(_brain.flows) if _brain else 0,
+            "mcp_count": len(_brain.registry.list_by_kind(CapabilityKind.MCP))
+            if _brain
+            else 0,
         },
     )
 
@@ -271,9 +229,7 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
             if not user_text or not _brain:
                 continue
 
-            await websocket.send_text(
-                json.dumps({"type": "typing", "status": True})
-            )
+            await websocket.send_text(json.dumps({"type": "typing", "status": True}))
 
             result = await _brain.think(user_text, session)
 
@@ -287,9 +243,7 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
                 )
             )
 
-            await websocket.send_text(
-                json.dumps({"type": "typing", "status": False})
-            )
+            await websocket.send_text(json.dumps({"type": "typing", "status": False}))
 
     except WebSocketDisconnect:
         session_manager.remove(session_id)
@@ -305,7 +259,6 @@ async def api_debug_prompt():
         return {"error": "Brain not initialized"}
 
     from lumen.core.session import Session
-    from lumen.core.registry import CapabilityKind
 
     session = Session()
     context = {
@@ -314,8 +267,7 @@ async def api_debug_prompt():
         "body": _brain.registry.as_context(),
         "catalog": _brain.catalog.as_context(
             installed_names={
-                c.name
-                for c in _brain.registry.list_by_kind(CapabilityKind.MODULE)
+                c.name for c in _brain.registry.list_by_kind(CapabilityKind.MODULE)
             }
         ),
         "active_flow": None,
@@ -349,9 +301,7 @@ async def api_modules_installed():
         return {"modules": []}
     from lumen.core.installer import Installer
 
-    installer = Installer(
-        PKG_DIR, _brain.connectors, _brain.memory, _brain.catalog
-    )
+    installer = Installer(PKG_DIR, _brain.connectors, _brain.memory, _brain.catalog)
     return {"modules": installer.list_installed()}
 
 
@@ -362,9 +312,7 @@ async def api_modules_install(name: str):
         return JSONResponse(status_code=503, content={"error": "Lumen not ready"})
     from lumen.core.installer import Installer
 
-    installer = Installer(
-        PKG_DIR, _brain.connectors, _brain.memory, _brain.catalog
-    )
+    installer = Installer(PKG_DIR, _brain.connectors, _brain.memory, _brain.catalog)
     result = installer.install_from_catalog(name)
 
     # Re-discover — Lumen becomes aware of new capability
@@ -381,9 +329,7 @@ async def api_modules_uninstall(name: str):
         return JSONResponse(status_code=503, content={"error": "Lumen not ready"})
     from lumen.core.installer import Installer
 
-    installer = Installer(
-        PKG_DIR, _brain.connectors, _brain.memory, _brain.catalog
-    )
+    installer = Installer(PKG_DIR, _brain.connectors, _brain.memory, _brain.catalog)
     result = installer.uninstall(name)
 
     # Re-discover — Lumen forgets the capability
@@ -401,9 +347,7 @@ async def api_modules_upload(request: Request):
     from lumen.core.installer import Installer
 
     body = await request.body()
-    installer = Installer(
-        PKG_DIR, _brain.connectors, _brain.memory, _brain.catalog
-    )
+    installer = Installer(PKG_DIR, _brain.connectors, _brain.memory, _brain.catalog)
     result = installer.install_from_zip(body)
 
     if result["status"] == "installed":

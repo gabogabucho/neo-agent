@@ -27,9 +27,7 @@ class Connector:
 
     async def execute(self, action: str, params: dict | None = None) -> Any:
         if action not in self.actions:
-            raise ValueError(
-                f"Unknown action '{action}' for connector '{self.name}'"
-            )
+            raise ValueError(f"Unknown action '{action}' for connector '{self.name}'")
         handler = self._handlers.get(action)
         if handler:
             return await handler(**(params or {}))
@@ -50,10 +48,27 @@ class ConnectorRegistry:
     def __init__(self):
         self._connectors: dict[str, Connector] = {}
         self._tool_schemas: dict[str, dict] = {}
+        self._explicit_tools: dict[str, dict[str, Any]] = {}
 
     def set_tool_schemas(self, schemas: dict[str, dict]):
         """Override tool schemas for specific tools (e.g. from handlers)."""
         self._tool_schemas.update(schemas)
+
+    def register_tool(
+        self,
+        name: str,
+        description: str,
+        parameters: dict,
+        handler: Callable[..., Coroutine],
+        metadata: dict | None = None,
+    ):
+        """Register a standalone tool that still flows through the connector seam."""
+        self._explicit_tools[name] = {
+            "description": description,
+            "parameters": parameters,
+            "handler": handler,
+            "metadata": metadata or {},
+        }
 
     def load(self, path: str | Path):
         """Load connectors from a YAML file."""
@@ -113,9 +128,7 @@ class ConnectorRegistry:
                             "type": "function",
                             "function": {
                                 "name": tool_name,
-                                "description": (
-                                    f"{connector.description} — {action}"
-                                ),
+                                "description": (f"{connector.description} — {action}"),
                                 "parameters": {
                                     "type": "object",
                                     "properties": {
@@ -128,7 +141,31 @@ class ConnectorRegistry:
                             },
                         }
                     )
+        for name, tool in self._explicit_tools.items():
+            tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "description": tool["description"],
+                        "parameters": tool["parameters"],
+                    },
+                }
+            )
         return tools
+
+    def has_tool(self, name: str) -> bool:
+        return name in self._explicit_tools
+
+    def list_registered_tools(self) -> list[dict]:
+        return [
+            {
+                "name": name,
+                "description": tool["description"],
+                "metadata": tool["metadata"],
+            }
+            for name, tool in self._explicit_tools.items()
+        ]
 
     def parse_tool_name(self, tool_name: str) -> tuple[str, str]:
         """Parse 'connector__action' back into (connector_name, action)."""
@@ -137,10 +174,14 @@ class ConnectorRegistry:
             raise ValueError(f"Invalid tool name format: {tool_name}")
         return parts[0], parts[1]
 
-    async def execute(
-        self, name: str, action: str, params: dict | None = None
-    ) -> Any:
+    async def execute(self, name: str, action: str, params: dict | None = None) -> Any:
         connector = self._connectors.get(name)
         if not connector:
             raise ValueError(f"Unknown connector: {name}")
         return await connector.execute(action, params)
+
+    async def execute_tool(self, name: str, params: dict | None = None) -> Any:
+        tool = self._explicit_tools.get(name)
+        if not tool:
+            raise ValueError(f"Unknown tool: {name}")
+        return await tool["handler"](**(params or {}))

@@ -1,5 +1,6 @@
 """Lumen CLI — install, run, status. The bootstrapper, not the experience."""
 
+import asyncio
 import os
 import webbrowser
 from pathlib import Path
@@ -9,6 +10,9 @@ import yaml
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
+
+from lumen.core.registry import CapabilityKind
+from lumen.core.runtime import bootstrap_runtime
 
 app = typer.Typer(
     name="lumen",
@@ -68,9 +72,7 @@ def install():
         api_key = Prompt.ask(f"\n{env_key}")
 
     # Port
-    port = int(
-        Prompt.ask("\nDashboard port", default="3000")
-    )
+    port = int(Prompt.ask("\nDashboard port", default="3000"))
 
     # Save config
     config = {
@@ -112,57 +114,19 @@ def run(
         if config.get("api_key") and config.get("api_key_env"):
             os.environ[config["api_key_env"]] = config["api_key"]
 
-        from lumen.core.brain import Brain
-        from lumen.core.connectors import ConnectorRegistry
-        from lumen.core.consciousness import Consciousness
-        from lumen.core.discovery import discover_all
-        from lumen.core.handlers import register_builtin_handlers
-        from lumen.core.memory import Memory
-        from lumen.core.personality import Personality
-        from lumen.core.registry import Registry
-
-        consciousness = Consciousness()
-        lang = config.get("language", "en")
-        personality = Personality(PKG_DIR / "locales" / lang / "personality.yaml")
-        memory = Memory(LUMEN_DIR / "memory.db")
-
-        connectors = ConnectorRegistry()
-        built_in_path = PKG_DIR / "connectors" / "built-in.yaml"
-        if built_in_path.exists():
-            connectors.load(built_in_path)
-        register_builtin_handlers(connectors, memory)
-
-        registry = Registry()
-        discover_all(
-            registry=registry,
-            pkg_dir=PKG_DIR,
-            connectors=connectors,
-            active_channels=["web"],
+        runtime = asyncio.run(
+            bootstrap_runtime(
+                config,
+                pkg_dir=PKG_DIR,
+                lumen_dir=LUMEN_DIR,
+                active_channels=["web"],
+            )
         )
 
-        from lumen.core.catalog import Catalog
-        catalog = Catalog()
-
-        brain = Brain(
-            consciousness=consciousness,
-            personality=personality,
-            memory=memory,
-            connectors=connectors,
-            registry=registry,
-            catalog=catalog,
-            model=config.get("model", "deepseek/deepseek-chat"),
-        )
-
-        flows_dir = PKG_DIR / "locales" / lang / "flows"
-        brain.load_flows(flows_dir)
-
-        ui_path = PKG_DIR / "locales" / lang / "ui.yaml"
-        locale = {}
-        if ui_path.exists():
-            locale = yaml.safe_load(ui_path.read_text(encoding="utf-8")) or {}
-
-        configure(brain, locale, config)
+        configure(runtime.brain, runtime.locale, runtime.config)
         use_port = port or config.get("port", 3000)
+        lang = config.get("language", "en")
+        mcp_count = len(runtime.brain.registry.list_by_kind(CapabilityKind.MCP))
 
         console.print(
             Panel(
@@ -170,7 +134,8 @@ def run(
                 f"  Dashboard:  [link]http://localhost:{use_port}[/link]\n"
                 f"  Model:      {config.get('model')}\n"
                 f"  Language:   {lang}\n"
-                f"  Flows:      {len(brain.flows)}",
+                f"  Flows:      {len(runtime.brain.flows)}\n"
+                f"  MCP:        {mcp_count}",
                 title="Lumen",
                 expand=False,
                 border_style="cyan",
@@ -209,6 +174,7 @@ def status():
             f"Model:     {config.get('model', 'not set')}\n"
             f"Language:  {config.get('language', 'en')}\n"
             f"Port:      {config.get('port', 3000)}\n"
+            f"MCP:       {len((config.get('mcp') or {}).get('servers', {}))}\n"
             f"Config:    {CONFIG_PATH}",
             title="Lumen — Status",
             expand=False,
