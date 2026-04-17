@@ -11,8 +11,8 @@
 
     body {
       font-family: 'Inter', sans-serif;
-      background: #020408;
-      color: #e5e7eb;
+      background: #f9fafb;
+      color: #111827;
       height: 100vh;
       display: flex;
       flex-direction: column;
@@ -31,7 +31,7 @@
       transform: translate(-50%, -50%);
       width: 4px;
       height: 4px;
-      background: #3b82f6;
+      background: #7b61ff;
       border-radius: 50%;
       opacity: 0;
       animation: lightBorn 1.5s ease-out 0.5s forwards;
@@ -40,8 +40,8 @@
 
     @keyframes lightBorn {
       0% { opacity: 0; width: 4px; height: 4px; box-shadow: none; }
-      50% { opacity: 1; width: 8px; height: 8px; box-shadow: 0 0 30px 10px rgba(59,130,246,0.4); }
-      100% { opacity: 1; width: 6px; height: 6px; box-shadow: 0 0 60px 20px rgba(59,130,246,0.3); }
+      50% { opacity: 1; width: 8px; height: 8px; box-shadow: 0 0 30px 10px rgba(123,97,255,0.4); }
+      100% { opacity: 1; width: 6px; height: 6px; box-shadow: 0 0 60px 20px rgba(123,97,255,0.3); }
     }
 
     /* Light expands outward — illuminating the darkness */
@@ -53,7 +53,7 @@
       width: 0;
       height: 0;
       border-radius: 50%;
-      background: radial-gradient(circle, rgba(59,130,246,0.15) 0%, rgba(59,130,246,0.05) 40%, transparent 70%);
+      background: radial-gradient(circle, rgba(123,97,255,0.15) 0%, rgba(123,97,255,0.05) 40%, transparent 70%);
       opacity: 0;
       animation: lightExpand 2.5s ease-out 1.5s forwards;
       z-index: 1;
@@ -87,12 +87,12 @@
     }
 
     .eye-main {
-      stroke: rgba(203,213,225,0.6);
+      stroke: rgba(156,163,175,0.8);
       animation: drawEye 2s ease-out 2.5s forwards;
     }
 
     .eye-facet {
-      stroke: rgba(71,85,105,0.4);
+      stroke: rgba(209,213,219,0.8);
       stroke-width: 1;
     }
     .eye-facet-1 { animation: drawEye 1.5s ease-out 3s forwards; }
@@ -104,7 +104,7 @@
 
     /* Iris — the light IS the iris. It was always there. */
     .eye-iris-glow {
-      fill: #3b82f6;
+      fill: #7b61ff;
       opacity: 0;
       filter: blur(12px);
       animation: irisGlow 2s ease-in-out 3.5s infinite;
@@ -117,7 +117,7 @@
 
     .eye-iris-outer {
       fill: none;
-      stroke: #3b82f6;
+      stroke: #7b61ff;
       stroke-width: 2;
       opacity: 0;
       transform-origin: 110px 65px;
@@ -126,7 +126,7 @@
     }
 
     .eye-iris-inner {
-      fill: #3b82f6;
+      fill: #7b61ff;
       opacity: 0;
       transform-origin: 110px 65px;
       transform: scale(0);
@@ -139,7 +139,7 @@
 
     /* Pupil — the deepest point, where light focuses */
     .eye-pupil {
-      fill: #020408;
+      fill: #111827;
       opacity: 0;
       transform-origin: 110px 65px;
       transform: scale(0);
@@ -164,7 +164,7 @@
 
     /* Connection nodes — they glow as light reaches them */
     .eye-node {
-      fill: #3b82f6;
+      fill: #7b61ff;
       opacity: 0;
       filter: blur(0);
     }
@@ -198,8 +198,8 @@
 
     .text-iam span {
       font-weight: 600;
-      color: #3b82f6;
-      text-shadow: 0 0 30px rgba(59,130,246,0.4);
+      color: #7b61ff;
+      text-shadow: 0 0 30px rgba(123,97,255,0.4);
     }
 
     @keyframes textFade {
@@ -219,7 +219,7 @@
     .discovery-line {
       font-size: 14px;
       font-weight: 300;
-      color: #6b7280;
+      color: #9ca3af;
       opacity: 0;
       transform: translateY(8px);
       transition: all 0.6s ease-out;
@@ -229,13 +229,13 @@
     .discovery-line.visible {
       opacity: 1;
       transform: translateY(0);
-      color: #9ca3af;
+      color: #4b5563;
     }
 
     .discovery-line .count {
-      color: #3b82f6;
+      color: #7b61ff;
       font-weight: 600;
-      text-shadow: 0 0 8px rgba(59,130,246,0.3);
+      text-shadow: 0 0 8px rgba(123,97,255,0.3);
     }
 
     /* Light pulse dot before each discovery line */
@@ -244,15 +244,15 @@
       width: 6px;
       height: 6px;
       border-radius: 50%;
-      background: #3b82f6;
+      background: #7b61ff;
       margin-right: 10px;
-      box-shadow: 0 0 8px 2px rgba(59,130,246,0.4);
+      box-shadow: 0 0 8px 2px rgba(123,97,255,0.4);
       animation: lightDotPulse 1.5s ease-in-out infinite;
     }
 
     @keyframes lightDotPulse {
-      0%, 100% { opacity: 0.4; box-shadow: 0 0 4px 1px rgba(59,130,246,0.2); }
-      50% { opacity: 1; box-shadow: 0 0 12px 4px rgba(59,130,246,0.5); }
+      0%, 100% { opacity: 0.4; box-shadow: 0 0 4px 1px rgba(123,97,255,0.2); }
+      50% { opacity: 1; box-shadow: 0 0 12px 4px rgba(123,97,255,0.5); }
     }
 
     /* === Phase 5: Ready === */
@@ -276,7 +276,7 @@
     .enter-btn {
       margin-top: 32px;
       padding: 14px 36px;
-      background: #3b82f6;
+      background: #7b61ff;
       color: white;
       border: none;
       border-radius: 12px;
@@ -290,7 +290,7 @@
       letter-spacing: 0.03em;
       z-index: 10;
       position: relative;
-      box-shadow: 0 0 20px rgba(59,130,246,0.2);
+      box-shadow: 0 0 20px rgba(123,97,255,0.2);
     }
 
     .enter-btn.visible {
@@ -298,9 +298,9 @@
     }
 
     .enter-btn:hover {
-      background: #2563eb;
+      background: #634bde;
       transform: translateY(-2px);
-      box-shadow: 0 4px 30px rgba(59,130,246,0.4);
+      box-shadow: 0 4px 30px rgba(123,97,255,0.4);
     }
 
     /* === Transition out — light fades === */
@@ -361,9 +361,9 @@
   <div class="discovery-feed" id="discovery-feed"></div>
 
   <!-- Phase 5: Ready -->
-  <div class="ready-text" id="ready-text">Lumen is ready.</div>
+  <div class="ready-text" id="ready-text">Lumen está lista.</div>
   <button class="enter-btn" id="enter-btn" onclick="enterDashboard()">
-    Enter Dashboard &rarr;
+    Comenzar &rarr;
   </button>
 
   <script>
@@ -402,12 +402,12 @@
       const gaps = caps.filter(c => c.status !== 'ready');
 
       // Each discovery is a beam of light illuminating something
-      await addDiscoveryLine(`Illuminating consciousness...`, 0);
-      await addDiscoveryLine(`Identity: <span class="count">Lumen</span>, Modular AI Agent`, 900);
-      await addDiscoveryLine(`Scanning body...`, 800);
-      await addDiscoveryLine(`<span class="count">${skills.length}</span> skills illuminated`, 700);
-      await addDiscoveryLine(`<span class="count">${connectors.length}</span> connectors found (<span class="count">${readyConns.length}</span> active)`, 600);
-      await addDiscoveryLine(`<span class="count">${channels.length}</span> channel online`, 500);
+      await addDiscoveryLine(`Iniciando conexión...`, 0);
+      await addDiscoveryLine(`Identidad: <span class="count">Lumen</span>, asistente lista`, 900);
+      await addDiscoveryLine(`Sincronizando...`, 800);
+      await addDiscoveryLine(`<span class="count">${skills.length}</span> habilidades cargadas`, 700);
+      await addDiscoveryLine(`<span class="count">${connectors.length}</span> módulos conectados`, 600);
+      await addDiscoveryLine(`Sistemas online`, 500);
 
       if (gaps.length > 0) {
         await addDiscoveryLine(`<span class="count">${gaps.length}</span> dark spots — awaiting light`, 500);
