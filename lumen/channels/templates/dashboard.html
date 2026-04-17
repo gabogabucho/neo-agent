@@ -73,7 +73,7 @@
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
         </svg>
-        {{ ui.status | default('Status') }}
+        {{ ui.status | default('Memoria') }}
       </button>
 
       <button onclick="showPanel('chat')"
@@ -82,7 +82,7 @@
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
         </svg>
-        {{ ui.chat | default('Chat') }}
+        {{ ui.chat | default('Charlas') }}
       </button>
 
       <button onclick="showPanel('marketplace')"
@@ -91,7 +91,7 @@
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
         </svg>
-        {{ ui.marketplace | default('Marketplace') }}
+        {{ ui.marketplace | default('Módulos') }}
       </button>
 
       <button onclick="showPanel('config')"
@@ -101,7 +101,7 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
         </svg>
-        {{ ui.config | default('Config') }}
+        {{ ui.config | default('Ajustes') }}
       </button>
     </nav>
 
@@ -119,7 +119,7 @@
 
     <!-- Status Panel -->
     <div id="panel-status" class="hidden flex-1 overflow-y-auto p-8">
-      <h2 class="text-2xl font-bold text-white mb-6">{{ ui.status | default('Status') }}</h2>
+      <h2 class="text-2xl font-bold text-white mb-6">{{ ui.status | default('Memoria') }}</h2>
 
       <!-- Dev-speak cards and lists have been hidden as requested -->
 
@@ -193,8 +193,8 @@
     <div id="panel-marketplace" class="hidden flex-1 overflow-y-auto p-8">
       <div class="flex items-center justify-between mb-6">
         <div>
-          <h2 class="text-2xl font-bold text-white">{{ ui.marketplace | default('Marketplace') }}</h2>
-          <p class="text-sm text-gray-500 mt-1">What is already part of the agent, what is connected in the Body, and which modules or personalities can be added next.</p>
+          <h2 class="text-2xl font-bold text-white">{{ ui.marketplace | default('Módulos') }}</h2>
+          <p class="text-sm text-gray-500 mt-1">Explora e instala nuevas capacidades y personalidades para Lumen.</p>
         </div>
         <label id="marketplace-upload-label" class="hidden bg-neo-accent/20 text-neo-accent px-4 py-2 rounded-lg text-sm font-medium hover:bg-neo-accent/30 transition-colors cursor-pointer">
           Upload ZIP
@@ -204,8 +204,8 @@
 
       <div class="flex flex-wrap gap-2 mb-6" id="marketplace-tabs">
         <button type="button" onclick="switchMarketplaceTab('kits_lumen')" id="tab-kits_lumen" class="marketplace-tab px-4 py-2 rounded-lg text-sm font-medium bg-white/5 text-gray-300 border border-neo-border">Modules &amp; Personalities</button>
-        <button type="button" onclick="switchMarketplaceTab('skills')" id="tab-skills" class="marketplace-tab px-4 py-2 rounded-lg text-sm font-medium bg-white/5 text-gray-300 border border-neo-border">Skills</button>
-        <button type="button" onclick="switchMarketplaceTab('mcps')" id="tab-mcps" class="marketplace-tab px-4 py-2 rounded-lg text-sm font-medium bg-white/5 text-gray-300 border border-neo-border">MCPs</button>
+        <button type="button" onclick="switchMarketplaceTab('skills')" id="tab-skills" class="hidden marketplace-tab px-4 py-2 rounded-lg text-sm font-medium bg-white/5 text-gray-300 border border-neo-border">Skills</button>
+        <button type="button" onclick="switchMarketplaceTab('mcps')" id="tab-mcps" class="hidden marketplace-tab px-4 py-2 rounded-lg text-sm font-medium bg-white/5 text-gray-300 border border-neo-border">MCPs</button>
       </div>
 
       <!-- Personality-first filter bar -->
