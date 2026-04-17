@@ -16,6 +16,7 @@ from lumen.core.discovery import discover_all
 from lumen.core.handlers import register_builtin_handlers
 from lumen.core.mcp import MCPManager
 from lumen.core.memory import Memory
+from lumen.core.marketplace import Marketplace
 from lumen.core.personality import Personality
 from lumen.core.registry import Registry
 
@@ -64,6 +65,12 @@ async def bootstrap_runtime(
     )
 
     catalog = Catalog()
+    marketplace = Marketplace(
+        catalog=catalog,
+        registry=registry,
+        connectors=connectors,
+        config=config,
+    )
     brain = Brain(
         consciousness=consciousness,
         personality=personality,
@@ -73,6 +80,7 @@ async def bootstrap_runtime(
         catalog=catalog,
         model=config.get("model", "deepseek/deepseek-chat"),
         mcp_manager=mcp_manager,
+        marketplace=marketplace,
     )
 
     flows_dir = pkg_dir / "locales" / lang / "flows"

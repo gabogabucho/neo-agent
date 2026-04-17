@@ -293,6 +293,9 @@ async def api_modules_catalog():
     """List all available modules from the catalog."""
     if not _brain:
         return {"modules": []}
+    marketplace = getattr(_brain, "marketplace", None)
+    if marketplace is not None:
+        return {"modules": marketplace.kits_catalog()}
     return {
         "modules": _brain.catalog.list_all(
             registry=_brain.registry,
@@ -306,10 +309,41 @@ async def api_modules_installed():
     """List installed modules."""
     if not _brain:
         return {"modules": []}
+    marketplace = getattr(_brain, "marketplace", None)
+    if marketplace is not None:
+        return {"modules": marketplace.kits_installed()}
     from lumen.core.installer import Installer
 
     installer = Installer(PKG_DIR, _brain.connectors, _brain.memory, _brain.catalog)
     return {"modules": installer.list_installed()}
+
+
+@app.get("/api/marketplace")
+async def api_marketplace():
+    """Aggregated marketplace read model: Body + Kits Lumen + remote feeds."""
+    if not _brain:
+        return {
+            "generated_at": None,
+            "feeds": [],
+            "tabs": [],
+            "skills": {"items": [], "installed": [], "available": [], "counts": {}},
+            "mcps": {"items": [], "installed": [], "available": [], "counts": {}},
+            "kits_lumen": {
+                "items": [],
+                "installed": [],
+                "available": [],
+                "counts": {},
+                "upload_enabled": True,
+            },
+        }
+
+    marketplace = getattr(_brain, "marketplace", None)
+    if marketplace is None:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Marketplace service not initialized"},
+        )
+    return marketplace.snapshot()
 
 
 @app.post("/api/modules/install/{name}")

@@ -85,13 +85,13 @@
         {{ ui.chat | default('Chat') }}
       </button>
 
-      <button onclick="showPanel('modules')"
-              id="nav-modules"
+      <button onclick="showPanel('marketplace')"
+              id="nav-marketplace"
               class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5 transition-colors">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
         </svg>
-        {{ ui.modules | default('Modules') }}
+        {{ ui.marketplace | default('Marketplace') }}
       </button>
 
       <button onclick="showPanel('config')"
@@ -228,28 +228,47 @@
       </div>
     </div>
 
-    <!-- Modules Panel -->
-    <div id="panel-modules" class="hidden flex-1 overflow-y-auto p-8">
+    <!-- Marketplace Panel -->
+    <div id="panel-marketplace" class="hidden flex-1 overflow-y-auto p-8">
       <div class="flex items-center justify-between mb-6">
-        <h2 class="text-2xl font-bold text-white">{{ ui.modules | default('Modules') }}</h2>
-        <label class="bg-neo-accent/20 text-neo-accent px-4 py-2 rounded-lg text-sm font-medium hover:bg-neo-accent/30 transition-colors cursor-pointer">
+        <div>
+          <h2 class="text-2xl font-bold text-white">{{ ui.marketplace | default('Marketplace') }}</h2>
+          <p class="text-sm text-gray-500 mt-1">What Lumen already is, what is in the Body, and what can still be connected or installed.</p>
+        </div>
+        <label id="marketplace-upload-label" class="hidden bg-neo-accent/20 text-neo-accent px-4 py-2 rounded-lg text-sm font-medium hover:bg-neo-accent/30 transition-colors cursor-pointer">
           Upload ZIP
           <input type="file" accept=".zip" id="zip-upload" class="hidden" onchange="uploadZip(this)" />
         </label>
       </div>
 
-      <!-- Installed -->
+      <div class="flex flex-wrap gap-2 mb-6" id="marketplace-tabs">
+        <button type="button" onclick="switchMarketplaceTab('skills')" id="tab-skills" class="marketplace-tab px-4 py-2 rounded-lg text-sm font-medium bg-white/5 text-gray-300 border border-neo-border">Skills</button>
+        <button type="button" onclick="switchMarketplaceTab('mcps')" id="tab-mcps" class="marketplace-tab px-4 py-2 rounded-lg text-sm font-medium bg-white/5 text-gray-300 border border-neo-border">MCPs</button>
+        <button type="button" onclick="switchMarketplaceTab('kits_lumen')" id="tab-kits_lumen" class="marketplace-tab px-4 py-2 rounded-lg text-sm font-medium bg-white/5 text-gray-300 border border-neo-border">Kits Lumen</button>
+      </div>
+
+      <div class="bg-neo-card rounded-xl border border-neo-border p-4 mb-6">
+        <div class="flex flex-wrap items-center gap-3 text-xs text-gray-400">
+          <span class="font-semibold uppercase tracking-wider text-gray-500">Cerebelo</span>
+          <span>🟢 ready</span>
+          <span>🟡 installable</span>
+          <span>🟠 partial</span>
+          <span>🔴 blocked</span>
+        </div>
+      </div>
+
+      <div id="marketplace-note" class="mb-6 text-sm text-gray-500"></div>
+
       <div class="mb-8">
-        <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Installed</h3>
-        <div id="installed-modules" class="space-y-3">
+        <h3 id="marketplace-installed-title" class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Installed</h3>
+        <div id="marketplace-installed" class="space-y-3">
           <p class="text-gray-500 text-sm">Loading...</p>
         </div>
       </div>
 
-      <!-- Available from catalog -->
       <div>
-        <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Available</h3>
-        <div id="catalog-modules" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <h3 id="marketplace-available-title" class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Available</h3>
+        <div id="marketplace-available" class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <p class="text-gray-500 text-sm">Loading...</p>
         </div>
       </div>
@@ -491,76 +510,146 @@
     }
     loadStatus();
 
-    // --- Module Management ---
-    async function loadModules() {
+    // --- Marketplace ---
+    const compatBadgeClasses = {
+      ready: 'bg-green-500/10 text-green-300 border-green-500/20',
+      installable: 'bg-yellow-500/10 text-yellow-300 border-yellow-500/20',
+      partial: 'bg-orange-500/10 text-orange-300 border-orange-500/20',
+      blocked: 'bg-red-500/10 text-red-300 border-red-500/20',
+    };
+    let marketplaceState = null;
+    let currentMarketplaceTab = 'skills';
+
+    function switchMarketplaceTab(tab) {
+      currentMarketplaceTab = tab;
+      document.querySelectorAll('.marketplace-tab').forEach(btn => {
+        btn.classList.remove('bg-neo-accent/10', 'text-neo-accent', 'border-neo-accent/40');
+        btn.classList.add('bg-white/5', 'text-gray-300', 'border-neo-border');
+      });
+      const active = document.getElementById(`tab-${tab}`);
+      if (active) {
+        active.classList.remove('bg-white/5', 'text-gray-300', 'border-neo-border');
+        active.classList.add('bg-neo-accent/10', 'text-neo-accent', 'border-neo-accent/40');
+      }
+      renderMarketplaceTab();
+    }
+
+    function renderCompatBadge(item) {
+      const badge = item.compatibility?.badge;
+      if (!badge) return '';
+      return `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-xs ${compatBadgeClasses[badge.status] || compatBadgeClasses.blocked}">${badge.emoji} ${badge.label}</span>`;
+    }
+
+    function renderSourcePills(item) {
+      const sources = item.sources || [];
+      if (!sources.length) return '';
+      return `<div class="flex flex-wrap gap-1 mt-3">${sources.map(source =>
+        `<span class="text-[11px] px-2 py-0.5 rounded bg-white/5 text-gray-400">${escapeHtml(source.label)}</span>`
+      ).join('')}</div>`;
+    }
+
+    function renderTagPills(item) {
+      const tags = item.tags || [];
+      if (!tags.length) return '';
+      return `<div class="flex flex-wrap gap-1 mt-3">${tags.map(tag =>
+        `<span class="text-[11px] px-2 py-0.5 rounded bg-white/5 text-gray-500">${escapeHtml(tag)}</span>`
+      ).join('')}</div>`;
+    }
+
+    function renderReadOnlyCard(item, emptyLabel) {
+      const reasons = item.compatibility?.reasons || [];
+      return `
+        <div class="bg-neo-card rounded-xl border border-neo-border p-5">
+          <div class="flex items-start justify-between gap-3 mb-3">
+            <div>
+              <h4 class="text-white font-semibold">${escapeHtml(item.display_name || item.name)}</h4>
+              <p class="text-xs text-gray-500 mt-1">${escapeHtml(item.min_capability || 'tier-1')} &bull; ${item.installed ? 'in Body' : 'read-only discovery'}</p>
+            </div>
+            ${renderCompatBadge(item)}
+          </div>
+          <p class="text-gray-400 text-sm">${escapeHtml(item.description || emptyLabel)}</p>
+          ${renderSourcePills(item)}
+          ${renderTagPills(item)}
+          ${reasons.length ? `<div class="mt-3 text-xs text-red-300">${reasons.map(r => escapeHtml(r)).join(' • ')}</div>` : ''}
+        </div>`;
+    }
+
+    function renderKitCard(item) {
+      const reasons = item.compatibility?.reasons || [];
+      const warnings = item.compatibility?.warnings || [];
+      return `
+        <div class="bg-neo-card rounded-xl border border-neo-border p-5">
+          <div class="flex items-start justify-between gap-3 mb-3">
+            <div>
+              <h4 class="text-white font-semibold">${escapeHtml(item.display_name || item.name)}</h4>
+              <p class="text-xs text-gray-500 mt-1">v${escapeHtml(item.version || '0.0.0')} &bull; ${escapeHtml(item.min_capability || 'tier-1')} &bull; ${escapeHtml(item.price || 'free')}</p>
+            </div>
+            <div class="flex items-center gap-2">${renderCompatBadge(item)}
+              ${item.actions?.can_install ? `<button onclick="installModule('${item.name}', this)" class="text-xs px-3 py-1.5 rounded-lg bg-neo-accent/20 text-neo-accent hover:bg-neo-accent/30 transition-colors">Install</button>` : ''}
+              ${item.actions?.can_uninstall ? `<button onclick="uninstallModule('${item.name}')" class="text-xs px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors">Uninstall</button>` : ''}
+            </div>
+          </div>
+          <p class="text-gray-400 text-sm">${escapeHtml(item.description || 'No description available.')}</p>
+          ${renderSourcePills(item)}
+          ${renderTagPills(item)}
+          ${warnings.length ? `<div class="mt-3 text-xs text-orange-300">${warnings.map(w => escapeHtml(w)).join(' • ')}</div>` : ''}
+          ${reasons.length ? `<div class="mt-2 text-xs text-red-300">${reasons.map(r => escapeHtml(r)).join(' • ')}</div>` : ''}
+        </div>`;
+    }
+
+    function renderMarketplaceList(container, items, renderer, emptyMessage, grid = false) {
+      if (!container) return;
+      container.className = grid ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : 'space-y-3';
+      if (!items || items.length === 0) {
+        container.innerHTML = `<div class="bg-neo-card rounded-xl border border-neo-border p-6 ${grid ? 'col-span-2' : ''}"><p class="text-gray-500 text-sm">${emptyMessage}</p></div>`;
+        return;
+      }
+      container.innerHTML = items.map(renderer).join('');
+    }
+
+    function renderMarketplaceTab() {
+      if (!marketplaceState) return;
+      const section = marketplaceState[currentMarketplaceTab];
+      if (!section) return;
+
+      const installedTitle = document.getElementById('marketplace-installed-title');
+      const availableTitle = document.getElementById('marketplace-available-title');
+      const installedEl = document.getElementById('marketplace-installed');
+      const availableEl = document.getElementById('marketplace-available');
+      const noteEl = document.getElementById('marketplace-note');
+      const uploadLabel = document.getElementById('marketplace-upload-label');
+      const isKits = currentMarketplaceTab === 'kits_lumen';
+
+      installedTitle.textContent = section.installed_label || 'Installed';
+      availableTitle.textContent = section.available_label || 'Available';
+      noteEl.textContent = section.read_only
+        ? 'Read-only discovery in this batch. Compatibility and feed data come from the server.'
+        : 'Only Kits Lumen can be installed or removed in this batch.';
+      uploadLabel.classList.toggle('hidden', !isKits);
+
+      renderMarketplaceList(
+        installedEl,
+        section.installed || [],
+        isKits ? renderKitCard : item => renderReadOnlyCard(item, 'No description available.'),
+        isKits ? 'No Kits Lumen are installed yet.' : 'Nothing from this tab is currently in the Body.',
+        false,
+      );
+      renderMarketplaceList(
+        availableEl,
+        section.available || [],
+        isKits ? renderKitCard : item => renderReadOnlyCard(item, 'No description available.'),
+        isKits ? 'No more Kits Lumen available.' : 'No additional entries were discovered.',
+        true,
+      );
+    }
+
+    async function loadMarketplace() {
       try {
-        const [catalogRes, installedRes] = await Promise.all([
-          fetch('/api/modules/catalog'),
-          fetch('/api/modules/installed'),
-        ]);
-        const catalog = await catalogRes.json();
-        const installed = await installedRes.json();
-
-        const installedNames = new Set(installed.modules.map(m => m.name));
-
-        // Render installed modules
-        const installedEl = document.getElementById('installed-modules');
-        if (installed.modules.length === 0) {
-          installedEl.innerHTML = `
-            <div class="bg-neo-card rounded-xl border border-neo-border p-6 text-center">
-              <p class="text-gray-500 text-sm">No modules installed yet.</p>
-              <p class="text-gray-600 text-xs mt-1">Install one from the catalog below.</p>
-            </div>`;
-        } else {
-          installedEl.innerHTML = installed.modules.map(m => `
-            <div class="bg-neo-card rounded-xl border border-neo-border p-4 flex items-center justify-between">
-              <div>
-                <div class="flex items-center gap-2">
-                  <div class="w-2 h-2 rounded-full bg-green-400"></div>
-                  <span class="text-white font-medium">${escapeHtml(m.display_name)}</span>
-                  <span class="text-xs text-gray-500">v${m.version}</span>
-                </div>
-                <p class="text-gray-400 text-xs mt-1 ml-4">${escapeHtml(m.description)}</p>
-              </div>
-              <button onclick="uninstallModule('${m.name}')"
-                      class="text-xs px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors">
-                Uninstall
-              </button>
-            </div>
-          `).join('');
-        }
-
-        // Render catalog (not installed)
-        const catalogEl = document.getElementById('catalog-modules');
-        const available = catalog.modules.filter(m => !installedNames.has(m.name));
-
-        if (available.length === 0) {
-          catalogEl.innerHTML = `
-            <div class="bg-neo-card rounded-xl border border-neo-border p-6 text-center col-span-2">
-              <p class="text-gray-500 text-sm">All modules are installed!</p>
-            </div>`;
-        } else {
-          catalogEl.innerHTML = available.map(m => `
-            <div class="bg-neo-card rounded-xl border border-neo-border p-5">
-              <div class="flex items-start justify-between mb-3">
-                <div>
-                  <h4 class="text-white font-semibold">${escapeHtml(m.display_name)}</h4>
-                  <span class="text-xs text-gray-500">${m.min_capability} &bull; ${m.price}</span>
-                </div>
-                <button onclick="installModule('${m.name}', this)"
-                        class="text-xs px-3 py-1.5 rounded-lg bg-neo-accent/20 text-neo-accent hover:bg-neo-accent/30 transition-colors">
-                  Install
-                </button>
-              </div>
-              <p class="text-gray-400 text-sm">${escapeHtml(m.description)}</p>
-              ${m.tags ? `<div class="flex gap-1 mt-3">${m.tags.map(t =>
-                `<span class="text-xs px-2 py-0.5 rounded bg-white/5 text-gray-500">${t}</span>`
-              ).join('')}</div>` : ''}
-            </div>
-          `).join('');
-        }
+        const res = await fetch('/api/marketplace');
+        marketplaceState = await res.json();
+        switchMarketplaceTab(currentMarketplaceTab);
       } catch (e) {
-        console.error('Failed to load modules:', e);
+        console.error('Failed to load marketplace:', e);
       }
     }
 
@@ -570,7 +659,7 @@
         const res = await fetch(`/api/modules/install/${name}`, { method: 'POST' });
         const data = await res.json();
         if (data.status === 'installed') {
-          loadModules();
+          loadMarketplace();
           loadStatus(); // Refresh status panel too
         } else {
           alert(data.error || data.status);
@@ -588,7 +677,7 @@
         const res = await fetch(`/api/modules/uninstall/${name}`, { method: 'DELETE' });
         const data = await res.json();
         if (data.status === 'uninstalled') {
-          loadModules();
+          loadMarketplace();
           loadStatus();
         }
       } catch (e) {
@@ -607,7 +696,7 @@
         });
         const result = await res.json();
         if (result.status === 'installed') {
-          loadModules();
+          loadMarketplace();
           loadStatus();
         } else {
           alert(result.error || result.status);
@@ -618,11 +707,11 @@
       input.value = '';
     }
 
-    // Load modules when panel is shown
+    // Load marketplace when panel is shown
     const origShowPanel = showPanel;
     showPanel = function(name) {
       origShowPanel(name);
-      if (name === 'modules') loadModules();
+      if (name === 'marketplace') loadMarketplace();
     };
   </script>
 </body>

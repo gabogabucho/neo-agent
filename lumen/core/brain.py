@@ -43,6 +43,7 @@ class Brain:
         model: str = "deepseek/deepseek-chat",
         flows: list[dict] | None = None,
         mcp_manager=None,
+        marketplace=None,
     ):
         self.consciousness = consciousness
         self.personality = personality
@@ -53,6 +54,7 @@ class Brain:
         self.model = model
         self.flows = flows or []
         self.mcp_manager = mcp_manager
+        self.marketplace = marketplace
 
     async def think(self, message: str, session: Session) -> dict:
         """Receive message -> assemble context -> LLM decides -> response."""
