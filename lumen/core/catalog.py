@@ -85,6 +85,7 @@ class Catalog:
                     "display_name": m.get("display_name", m["name"]),
                     "description": m.get("description", ""),
                     "version": m.get("version", "0.0.0"),
+                    "path": m.get("path"),
                     "price": m.get("price", "free"),
                     "min_capability": m.get("min_capability", "tier-1"),
                     "tags": m.get("tags", []),

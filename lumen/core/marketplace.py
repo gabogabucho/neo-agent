@@ -204,6 +204,7 @@ class Marketplace:
             "runtime": False,
             "status": "installed" if installed else "catalog",
             "version": entry.get("version", "0.0.0"),
+            "path": entry.get("path"),
             "price": entry.get("price", "free"),
             "min_capability": entry.get("min_capability", "tier-1"),
             "tags": entry.get("tags", []),
@@ -247,6 +248,7 @@ class Marketplace:
             "runtime": True,
             "status": capability.status.value,
             "version": capability.metadata.get("version", "0.0.0"),
+            "path": capability.metadata.get("path"),
             "price": capability.metadata.get("price", "free"),
             "min_capability": capability.metadata.get(
                 "min_capability", capability.min_capability

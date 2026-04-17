@@ -143,6 +143,8 @@ def normalize_module_manifest(
         metadata={
             "display_name": manifest.get("display_name"),
             "version": manifest.get("version", "0.0.0"),
+            "path": manifest.get("path"),
+            "tags": _normalize_string_list(manifest.get("tags")),
             "min_capability": manifest.get("min_capability", "tier-1"),
             "schema_aliases": {
                 "skills_required": _normalize_string_list(
@@ -417,6 +419,8 @@ def normalize_capability(capability: Capability) -> NormalizedArtifact | None:
     if capability.kind == CapabilityKind.MODULE:
         payload = capability.to_dict()
         payload.setdefault("display_name", capability.metadata.get("display_name"))
+        payload.setdefault("path", capability.metadata.get("path"))
+        payload.setdefault("tags", capability.metadata.get("tags", []))
         payload.setdefault(
             "skills_required",
             capability.metadata.get("schema_aliases", {}).get("skills_required", []),

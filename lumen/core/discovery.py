@@ -220,6 +220,8 @@ def _discover_modules(registry: Registry, modules_dir: Path):
                         "display_name": manifest.get("display_name", name),
                         "version": manifest.get("version", "0.0.0"),
                         "author": manifest.get("author", ""),
+                        "path": str(module_dir),
+                        "tags": normalized.metadata.get("tags", []),
                         "min_capability": manifest.get("min_capability", "tier-1"),
                         "manifest_path": str(manifest_file),
                         "schema_aliases": normalized.metadata.get("schema_aliases", {}),

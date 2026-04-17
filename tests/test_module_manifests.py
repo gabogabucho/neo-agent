@@ -116,6 +116,47 @@ class ModuleManifestResolutionTests(unittest.TestCase):
             Path(discovered.metadata["manifest_path"]).name, "manifest.yaml"
         )
 
+    def test_installed_module_discovery_preserves_path_and_tags_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg_dir = Path(tmp)
+            module_dir = pkg_dir / "modules" / "metadata-module"
+            module_dir.mkdir(parents=True)
+            (module_dir / "SKILL.md").write_text("# Metadata skill\n", encoding="utf-8")
+
+            _write_yaml(
+                module_dir / "module.yaml",
+                {
+                    "name": "metadata-module",
+                    "display_name": "Metadata Module",
+                    "description": "Preserves tags and path",
+                    "version": "1.2.3",
+                    "tags": ["personality", "developer"],
+                },
+            )
+
+            installer = Installer(
+                pkg_dir=pkg_dir,
+                connectors=ConnectorRegistry(),
+                memory=None,
+            )
+
+            registry = Registry()
+            discover_all(
+                registry=registry,
+                pkg_dir=pkg_dir,
+                connectors=ConnectorRegistry(),
+                active_channels=[],
+            )
+            installed = installer.list_installed()
+
+        self.assertEqual(installed[0]["tags"], ["personality", "developer"])
+        self.assertEqual(installed[0]["path"], str(module_dir))
+
+        discovered = registry.get(CapabilityKind.MODULE, "metadata-module")
+        self.assertIsNotNone(discovered)
+        self.assertEqual(discovered.metadata["tags"], ["personality", "developer"])
+        self.assertEqual(discovered.metadata["path"], str(module_dir))
+
     def test_zip_install_supports_module_yaml(self):
         with tempfile.TemporaryDirectory() as tmp:
             pkg_dir = Path(tmp)
@@ -216,6 +257,35 @@ class ModuleManifestResolutionTests(unittest.TestCase):
             self.assertEqual(result["status"], "installed")
             self.assertEqual(result["name"], "legacy-zip-module")
             self.assertTrue(manifest_path.exists())
+
+    def test_zip_install_warns_for_external_non_lumen_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg_dir = Path(tmp)
+            installer = Installer(
+                pkg_dir=pkg_dir,
+                connectors=ConnectorRegistry(),
+                memory=None,
+            )
+
+            result = installer.install_from_zip(
+                _zip_bytes(
+                    {
+                        "external/module.yaml": yaml.dump(
+                            {
+                                "name": "external-module",
+                                "display_name": "External Module",
+                                "description": "Installed from outside the catalog",
+                            },
+                            sort_keys=False,
+                        ),
+                        "external/SKILL.md": "# External Module\n",
+                    }
+                )
+            )
+
+        self.assertEqual(result["status"], "installed")
+        self.assertEqual(len(result["warnings"]), 1)
+        self.assertIn("x-lumen-*", result["warnings"][0])
 
 
 if __name__ == "__main__":

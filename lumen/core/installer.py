@@ -60,6 +60,7 @@ class Installer:
                         "display_name": manifest.get("display_name", module_dir.name),
                         "description": manifest.get("description", ""),
                         "version": manifest.get("version", "0.0.0"),
+                        "tags": manifest.get("tags", []),
                         "path": str(module_dir),
                     }
                 )
@@ -88,8 +89,7 @@ class Installer:
         module_dir = self.installed_dir / name
         module_dir.mkdir(parents=True, exist_ok=True)
 
-        # Check if real module files exist in catalog/modules/
-        catalog_module_dir = self.pkg_dir / "catalog" / "modules" / name
+        catalog_module_dir = self._resolve_catalog_module_dir(module_info)
         if catalog_module_dir.exists():
             # Copy real module files
             for src_file in catalog_module_dir.rglob("*"):
@@ -147,6 +147,8 @@ class Installer:
                         "name": module_name,
                     }
 
+                warnings = self._external_module_warnings(module_name)
+
                 # Extract to modules directory
                 # Determine the root dir inside the zip
                 root_prefix = zip_manifest_root_prefix(manifest_path)
@@ -171,6 +173,7 @@ class Installer:
                     "name": module_name,
                     "display_name": manifest.get("display_name", module_name),
                     "description": manifest.get("description", ""),
+                    "warnings": warnings,
                 }
 
         except Exception as e:
@@ -226,3 +229,21 @@ class Installer:
             )
 
         return "\n".join(lines)
+
+    def _resolve_catalog_module_dir(self, module_info: dict) -> Path:
+        """Resolve the source directory for a catalog module safely."""
+        catalog_root = (self.pkg_dir / "catalog").resolve()
+        relative_path = module_info.get("path") or f"modules/{module_info['name']}"
+        candidate = (catalog_root / relative_path).resolve()
+
+        if candidate != catalog_root and catalog_root not in candidate.parents:
+            return catalog_root / "__invalid__"
+        return candidate
+
+    def _external_module_warnings(self, module_name: str) -> list[str]:
+        warnings: list[str] = []
+        if module_name and not module_name.startswith("x-lumen-"):
+            warnings.append(
+                "External module does not follow the recommended 'x-lumen-*' naming convention"
+            )
+        return warnings

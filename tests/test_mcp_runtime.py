@@ -5,6 +5,7 @@ from pathlib import Path
 
 import yaml
 
+from lumen.core.connectors import ConnectorRegistry
 from lumen.core.installer import Installer
 from lumen.core.catalog import Catalog
 from lumen.core.registry import CapabilityKind
@@ -17,6 +18,72 @@ FAKE_SERVER = Path(__file__).parent / "fixtures" / "fake_mcp_server.py"
 
 
 class MCPRuntimeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_catalog_install_uses_entry_path_and_preserves_catalog_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_root = Path(tmp)
+            pkg_dir = temp_root / "pkg"
+
+            catalog_dir = pkg_dir / "catalog"
+            (catalog_dir / "kits" / "demo-personality").mkdir(parents=True)
+            (catalog_dir / "kits" / "demo-personality" / "module.yaml").write_text(
+                yaml.dump(
+                    {
+                        "name": "demo-personality",
+                        "display_name": "Demo Personality",
+                        "description": "Catalog path aware install",
+                        "version": "2.0.0",
+                        "tags": ["x-lumen", "personality"],
+                    },
+                    sort_keys=False,
+                ),
+                encoding="utf-8",
+            )
+            (catalog_dir / "kits" / "demo-personality" / "SKILL.md").write_text(
+                "# Demo Personality\n",
+                encoding="utf-8",
+            )
+            (catalog_dir / "index.yaml").write_text(
+                yaml.dump(
+                    {
+                        "modules": [
+                            {
+                                "name": "demo-personality",
+                                "display_name": "Demo Personality",
+                                "description": "Catalog path aware install",
+                                "version": "2.0.0",
+                                "tags": ["x-lumen", "personality"],
+                                "path": "kits/demo-personality",
+                            }
+                        ]
+                    },
+                    sort_keys=False,
+                ),
+                encoding="utf-8",
+            )
+
+            catalog = Catalog(catalog_dir / "index.yaml")
+            installer = Installer(
+                pkg_dir,
+                ConnectorRegistry(),
+                memory=None,
+                catalog=catalog,
+            )
+
+            install_result = installer.install_from_catalog("demo-personality")
+            installed = installer.list_installed()
+            installed_manifest_exists = (
+                pkg_dir / "modules" / "demo-personality" / "module.yaml"
+            ).exists()
+
+        self.assertEqual(install_result["status"], "installed")
+        self.assertTrue(installed_manifest_exists)
+        self.assertEqual(catalog.list_all()[0]["path"], "kits/demo-personality")
+        self.assertEqual(
+            catalog.get("demo-personality")["path"], "kits/demo-personality"
+        )
+        self.assertEqual(catalog.list_all()[0]["tags"], ["x-lumen", "personality"])
+        self.assertEqual(installed[0]["tags"], ["x-lumen", "personality"])
+
     async def test_bootstrap_registers_stdio_mcp_tools(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = await bootstrap_runtime(

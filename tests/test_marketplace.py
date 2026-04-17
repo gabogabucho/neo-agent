@@ -74,6 +74,7 @@ class MarketplaceTests(unittest.TestCase):
                                 "display_name": "Scheduler",
                                 "description": "Schedules reminders.",
                                 "version": "1.0.0",
+                                "path": "kits/scheduler",
                                 "price": "free",
                                 "min_capability": "tier-2",
                                 "requires": {
@@ -142,6 +143,9 @@ class MarketplaceTests(unittest.TestCase):
         self.assertEqual(snapshot["mcps"]["available"][0]["name"], "docs-mcp")
         self.assertTrue(snapshot["mcps"]["available"][0]["actions"]["read_only"])
         self.assertEqual(snapshot["kits_lumen"]["available"][0]["name"], "scheduler")
+        self.assertEqual(
+            snapshot["kits_lumen"]["available"][0]["path"], "kits/scheduler"
+        )
         self.assertTrue(
             snapshot["kits_lumen"]["available"][0]["actions"]["can_install"]
         )
