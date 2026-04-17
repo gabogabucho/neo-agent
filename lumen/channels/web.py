@@ -268,7 +268,9 @@ async def api_debug_prompt():
         "catalog": _brain.catalog.as_context(
             installed_names={
                 c.name for c in _brain.registry.list_by_kind(CapabilityKind.MODULE)
-            }
+            },
+            registry=_brain.registry,
+            connectors=_brain.connectors,
         ),
         "active_flow": None,
         "filled_slots": {},
@@ -291,7 +293,12 @@ async def api_modules_catalog():
     """List all available modules from the catalog."""
     if not _brain:
         return {"modules": []}
-    return {"modules": _brain.catalog.list_all()}
+    return {
+        "modules": _brain.catalog.list_all(
+            registry=_brain.registry,
+            connectors=_brain.connectors,
+        )
+    }
 
 
 @app.get("/api/modules/installed")

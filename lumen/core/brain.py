@@ -74,7 +74,9 @@ class Brain:
             "catalog": self.catalog.as_context(
                 installed_names={
                     c.name for c in self.registry.list_by_kind(CapabilityKind.MODULE)
-                }
+                },
+                registry=self.registry,
+                connectors=self.connectors,
             ),
             "active_flow": session.active_flow,
             "filled_slots": session.slots,
@@ -203,7 +205,11 @@ class Brain:
         params = json.loads(arguments) if arguments else {}
         query = params.get("query", "")
 
-        results = self.catalog.find_for_gap(query)
+        results = self.catalog.find_for_gap(
+            query,
+            registry=self.registry,
+            connectors=self.connectors,
+        )
         if not results:
             return {
                 "found": 0,
@@ -219,6 +225,7 @@ class Brain:
                     "display_name": mod.get("display_name", mod["name"]),
                     "description": mod.get("description", ""),
                     "price": mod.get("price", "free"),
+                    "compatibility": (mod.get("compatibility") or {}).get("status"),
                     "install_hint": f"Install from the Modules panel in the dashboard, "
                     f"or tell me 'install {mod['name']}' and I'll guide you.",
                 }

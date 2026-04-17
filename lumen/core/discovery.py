@@ -17,6 +17,11 @@ from typing import Any
 
 import yaml
 
+from lumen.core.cerebelo import (
+    annotate_registry,
+    normalize_agent_skill,
+    normalize_module_manifest,
+)
 from lumen.core.connectors import ConnectorRegistry
 from lumen.core.registry import (
     Capability,
@@ -56,6 +61,7 @@ def discover_all(
     # Second pass: validate skill dependencies
     # If a skill requires a connector that has no handler, mark it as MISSING_DEPS
     _validate_skill_deps(registry)
+    annotate_registry(registry, connectors)
 
     return registry
 
@@ -64,7 +70,8 @@ def _discover_skill_file(registry: Registry, skill_file: Path, fallback_name: st
     """Discover a single SKILL.md file."""
     try:
         frontmatter = _parse_frontmatter(skill_file)
-        name = frontmatter.get("name", fallback_name)
+        normalized = normalize_agent_skill(frontmatter, path=str(skill_file))
+        name = normalized.name or fallback_name
 
         # Don't register if already exists (built-in takes priority)
         if registry.get(CapabilityKind.SKILL, name):
@@ -74,13 +81,13 @@ def _discover_skill_file(registry: Registry, skill_file: Path, fallback_name: st
             Capability(
                 kind=CapabilityKind.SKILL,
                 name=name,
-                description=frontmatter.get("description", ""),
+                description=normalized.description,
                 status=CapabilityStatus.READY,
-                provides=frontmatter.get("provides", []),
-                requires=frontmatter.get("requires", {}),
-                min_capability=frontmatter.get("min_capability", "tier-1"),
+                provides=normalized.provides,
+                requires=normalized.requires,
+                min_capability=normalized.metadata.get("min_capability", "tier-1"),
                 metadata={
-                    "level": frontmatter.get("level", 1),
+                    "level": normalized.metadata.get("level", 1),
                     "path": str(skill_file),
                 },
             )
@@ -104,10 +111,11 @@ def _discover_skills(registry: Registry, skills_dir: Path):
 
         try:
             frontmatter = _parse_frontmatter(skill_file)
-            name = frontmatter.get("name", skill_dir.name)
-            description = frontmatter.get("description", "")
-            requires = frontmatter.get("requires", {})
-            level = frontmatter.get("level", 1)
+            normalized = normalize_agent_skill(frontmatter, path=str(skill_file))
+            name = normalized.name or skill_dir.name
+            description = normalized.description
+            requires = normalized.requires
+            level = normalized.metadata.get("level", 1)
 
             registry.register(
                 Capability(
@@ -115,9 +123,9 @@ def _discover_skills(registry: Registry, skills_dir: Path):
                     name=name,
                     description=description,
                     status=CapabilityStatus.READY,
-                    provides=frontmatter.get("provides", []),
+                    provides=normalized.provides,
                     requires=requires,
-                    min_capability=frontmatter.get("min_capability", "tier-1"),
+                    min_capability=normalized.metadata.get("min_capability", "tier-1"),
                     metadata={
                         "level": level,
                         "path": str(skill_file),
@@ -198,7 +206,8 @@ def _discover_modules(registry: Registry, modules_dir: Path):
             with open(manifest_file, encoding="utf-8") as f:
                 manifest = yaml.safe_load(f) or {}
 
-            name = manifest.get("name", module_dir.name)
+            normalized = normalize_module_manifest(manifest, installed=True)
+            name = normalized.name or module_dir.name
 
             # Module is installed (it's in modules/ dir) — check if its skill is ready
             has_skill = (module_dir / "SKILL.md").exists()
@@ -208,17 +217,16 @@ def _discover_modules(registry: Registry, modules_dir: Path):
                 Capability(
                     kind=CapabilityKind.MODULE,
                     name=name,
-                    description=manifest.get("description", ""),
+                    description=normalized.description,
                     status=status,
-                    requires={
-                        "skills": manifest.get("skills_required", []),
-                        "channels": manifest.get("channels_supported", []),
-                    },
+                    provides=normalized.provides,
+                    requires=normalized.requires,
                     metadata={
                         "display_name": manifest.get("display_name", name),
                         "version": manifest.get("version", "0.0.0"),
                         "author": manifest.get("author", ""),
                         "min_capability": manifest.get("min_capability", "tier-1"),
+                        "schema_aliases": normalized.metadata.get("schema_aliases", {}),
                     },
                 )
             )

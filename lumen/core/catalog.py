@@ -11,6 +11,8 @@ from pathlib import Path
 
 import yaml
 
+from lumen.core.cerebelo import compatibility_for_catalog_entry
+
 
 class Catalog:
     """Available modules that can be installed to extend Lumen."""
@@ -28,7 +30,7 @@ class Catalog:
     def modules(self) -> list[dict]:
         return self._modules
 
-    def search(self, query: str) -> list[dict]:
+    def search(self, query: str, *, registry=None, connectors=None) -> list[dict]:
         """Search catalog by name, description, tags, or fills_gaps."""
         query_lower = query.lower()
         results = []
@@ -48,48 +50,68 @@ class Catalog:
                 if tag in query_lower or query_lower in tag:
                     score += 2
             if score > 0:
-                results.append((score, mod))
+                results.append(
+                    (
+                        score,
+                        self._decorate(mod, registry=registry, connectors=connectors),
+                    )
+                )
         results.sort(key=lambda x: x[0], reverse=True)
         return [mod for _, mod in results]
 
-    def find_for_gap(self, gap_description: str) -> list[dict]:
+    def find_for_gap(
+        self, gap_description: str, *, registry=None, connectors=None
+    ) -> list[dict]:
         """Find modules that could fill a specific capability gap.
 
         This is the key method: Lumen detects it can't do something,
         describes the gap, and this method finds relevant modules.
         """
-        return self.search(gap_description)
+        return self.search(gap_description, registry=registry, connectors=connectors)
 
-    def get(self, name: str) -> dict | None:
+    def get(self, name: str, *, registry=None, connectors=None) -> dict | None:
         """Get a module by name."""
         for mod in self._modules:
             if mod["name"] == name:
-                return mod
+                return self._decorate(mod, registry=registry, connectors=connectors)
         return None
 
-    def list_all(self) -> list[dict]:
+    def list_all(self, *, registry=None, connectors=None) -> list[dict]:
         """List all available modules."""
         return [
-            {
-                "name": m["name"],
-                "display_name": m.get("display_name", m["name"]),
-                "description": m.get("description", ""),
-                "version": m.get("version", "0.0.0"),
-                "price": m.get("price", "free"),
-                "min_capability": m.get("min_capability", "tier-1"),
-                "tags": m.get("tags", []),
-            }
+            self._decorate(
+                {
+                    "name": m["name"],
+                    "display_name": m.get("display_name", m["name"]),
+                    "description": m.get("description", ""),
+                    "version": m.get("version", "0.0.0"),
+                    "price": m.get("price", "free"),
+                    "min_capability": m.get("min_capability", "tier-1"),
+                    "tags": m.get("tags", []),
+                    "provides": m.get("provides", []),
+                    "requires": m.get("requires", {}),
+                    "fills_gaps": m.get("fills_gaps", []),
+                },
+                registry=registry,
+                connectors=connectors,
+            )
             for m in self._modules
         ]
 
-    def as_context(self, installed_names: set[str] | None = None) -> str:
+    def as_context(
+        self, installed_names: set[str] | None = None, *, registry=None, connectors=None
+    ) -> str:
         """Format catalog for the LLM prompt.
 
         Filters out already-installed modules so the LLM doesn't
         recommend installing something Lumen already has.
         """
         installed = installed_names or set()
-        available = [m for m in self._modules if m["name"] not in installed]
+        available = [
+            self._decorate(m, registry=registry, connectors=connectors)
+            for m in self._modules
+            if m["name"] not in installed
+        ]
 
         if not available:
             return ""
@@ -103,9 +125,21 @@ class Catalog:
         ]
         for mod in available:
             gaps = ", ".join(mod.get("fills_gaps", [])[:4])
+            compat = mod.get("compatibility") or {}
+            compat_hint = compat.get("status", "unknown")
             lines.append(
                 f"- **{mod.get('display_name', mod['name'])}** "
                 f"({mod['name']}): {mod.get('description', '')} "
-                f"[fills: {gaps}]"
+                f"[fills: {gaps}; compatibility: {compat_hint}]"
             )
         return "\n".join(lines)
+
+    def _decorate(self, module: dict, *, registry=None, connectors=None) -> dict:
+        item = dict(module)
+        if registry is not None and connectors is not None:
+            item["compatibility"] = compatibility_for_catalog_entry(
+                item,
+                registry,
+                connectors,
+            )
+        return item
