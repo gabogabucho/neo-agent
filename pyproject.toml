@@ -20,6 +20,15 @@ dependencies = [
     "pydantic>=2.7.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
 [project.scripts]
 lumen = "lumen.cli.main:app"
 
