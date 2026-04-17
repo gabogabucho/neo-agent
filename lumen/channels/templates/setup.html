@@ -107,6 +107,47 @@
       line-height: 1.5;
     }
 
+    .personality-section {
+      display: none;
+      margin-bottom: 24px;
+    }
+
+    .personality-title {
+      font-size: 13px;
+      color: #9ca3af;
+      margin-bottom: 12px;
+    }
+
+    .personality-grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .personality-card {
+      background: #111827;
+      border: 2px solid #1e293b;
+      border-radius: 12px;
+      padding: 16px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .personality-card:hover { border-color: #3b82f6; }
+    .personality-card.selected { border-color: #3b82f6; background: rgba(59,130,246,0.1); }
+
+    .personality-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+      margin-bottom: 6px;
+    }
+
+    .personality-name { font-size: 14px; font-weight: 600; }
+    .personality-status { font-size: 11px; color: #60a5fa; text-transform: uppercase; }
+    .personality-description { color: #9ca3af; font-size: 13px; line-height: 1.5; }
+    .personality-empty { color: #6b7280; font-size: 13px; }
+
     .lang-card {
       background: #111827;
       border: 2px solid #1e293b;
@@ -337,6 +378,11 @@
         </div>
       </div>
 
+      <div class="personality-section" id="personality-section">
+        <div class="personality-title" id="personality-title">Elige una personalidad opcional</div>
+        <div class="personality-grid" id="personality-grid"></div>
+      </div>
+
       <div class="btn-row">
         <button class="btn btn-primary" id="btn-next-0" disabled onclick="nextStep()">Continue</button>
       </div>
@@ -462,13 +508,62 @@
 
   <script>
     let currentStep = 0;
-    let config = { entry_path: '', language: '', provider: '', model: '', api_key_env: '', api_key: '' };
+    let config = { entry_path: '', active_personality: '', language: '', provider: '', model: '', api_key_env: '', api_key: '' };
 
-    function selectEntryPath(el) {
+    async function selectEntryPath(el) {
       document.querySelectorAll('.entry-card').forEach(c => c.classList.remove('selected'));
       el.classList.add('selected');
       config.entry_path = el.dataset.entryPath;
+      config.active_personality = '';
       document.getElementById('btn-next-0').disabled = false;
+      await loadPersonalitiesForEntryPath(config.entry_path);
+    }
+
+    function selectPersonality(el) {
+      document.querySelectorAll('.personality-card').forEach(c => c.classList.remove('selected'));
+      el.classList.add('selected');
+      config.active_personality = el.dataset.moduleName || '';
+    }
+
+    async function loadPersonalitiesForEntryPath(entryPath) {
+      const section = document.getElementById('personality-section');
+      const title = document.getElementById('personality-title');
+      const grid = document.getElementById('personality-grid');
+
+      if (entryPath === 'desde_cero') {
+        section.style.display = 'none';
+        grid.innerHTML = '';
+        return;
+      }
+
+      section.style.display = 'block';
+      title.textContent = entryPath === 'negocio'
+        ? 'Elige una personalidad de negocio opcional'
+        : 'Elige una personalidad personal opcional';
+      grid.innerHTML = '<div class="personality-empty">Loading personalities...</div>';
+
+      try {
+        const res = await fetch(`/api/setup/personalities?entry_path=${encodeURIComponent(entryPath)}`);
+        const data = await res.json();
+        const modules = Array.isArray(data.modules) ? data.modules : [];
+
+        if (!modules.length) {
+          grid.innerHTML = '<div class="personality-empty">No personalities available yet for this path.</div>';
+          return;
+        }
+
+        grid.innerHTML = modules.map((mod) => `
+          <div class="personality-card" data-module-name="${mod.name}" onclick="selectPersonality(this)">
+            <div class="personality-meta">
+              <div class="personality-name">${mod.display_name || mod.name}</div>
+              <div class="personality-status">${mod.installed ? 'installed' : 'catalog'}</div>
+            </div>
+            <div class="personality-description">${mod.description || ''}</div>
+          </div>
+        `).join('');
+      } catch (e) {
+        grid.innerHTML = '<div class="personality-empty">Could not load personalities right now.</div>';
+      }
     }
 
     // --- Language selection ---
@@ -555,6 +650,7 @@
         btn.textContent = 'Connecting to OpenRouter...';
         const params = new URLSearchParams({
           entry_path: config.entry_path,
+          active_personality: config.active_personality || '',
           language: config.language,
           model: config.model,
           port: String(parseInt(location.port) || 3000),
@@ -582,6 +678,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             entry_path: config.entry_path,
+            active_personality: config.active_personality || null,
             language: config.language,
             model: config.model,
             api_key_env: config.api_key_env || null,

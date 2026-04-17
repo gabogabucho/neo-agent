@@ -164,7 +164,7 @@ class OpenRouterOAuthTests(unittest.TestCase):
             yaml.dump(
                 {
                     "name": "test-web-personality",
-                    "tags": ["x-lumen", "personality"],
+                    "tags": ["x-lumen", "personality", "personal"],
                 },
                 sort_keys=False,
             ),
@@ -196,6 +196,186 @@ class OpenRouterOAuthTests(unittest.TestCase):
             for directory in created_dirs:
                 if directory.exists():
                     directory.rmdir()
+
+    def test_setup_personalities_filters_by_entry_path(self):
+        self._write_catalog_personality(
+            "x-lumen-personal",
+            display_name="Personal",
+            description="Personal assistant",
+            tags=["x-lumen", "personality", "personal"],
+        )
+        self._write_catalog_personality(
+            "x-lumen-negocio",
+            display_name="Negocio",
+            description="Business assistant",
+            tags=["x-lumen", "personality", "negocio"],
+        )
+        self._write_personality_module(
+            web.PKG_DIR / "modules" / "x-lumen-personal",
+            module_name="x-lumen-personal",
+            persona_name="Installed Personal",
+            flow_intent="installed-personal",
+            tags=["x-lumen", "personality", "personal"],
+        )
+
+        personal = self.client.get(
+            "/api/setup/personalities", params={"entry_path": "uso_personal"}
+        )
+        negocio = self.client.get(
+            "/api/setup/personalities", params={"entry_path": "negocio"}
+        )
+        desde_cero = self.client.get(
+            "/api/setup/personalities", params={"entry_path": "desde_cero"}
+        )
+
+        self.assertEqual(personal.status_code, 200)
+        self.assertEqual(negocio.status_code, 200)
+        self.assertEqual(desde_cero.status_code, 200)
+        self.assertEqual(
+            personal.json()["modules"],
+            [
+                {
+                    "name": "x-lumen-personal",
+                    "display_name": "Personal",
+                    "description": "Personal assistant",
+                    "tags": ["x-lumen", "personality", "personal"],
+                    "installed": True,
+                }
+            ],
+        )
+        self.assertEqual(
+            negocio.json()["modules"],
+            [
+                {
+                    "name": "x-lumen-negocio",
+                    "display_name": "Negocio",
+                    "description": "Business assistant",
+                    "tags": ["x-lumen", "personality", "negocio"],
+                    "installed": False,
+                }
+            ],
+        )
+        self.assertEqual(desde_cero.json()["modules"], [])
+
+    def test_api_setup_installs_catalog_personality_before_saving(self):
+        self._write_catalog_personality(
+            "x-lumen-personal",
+            display_name="Personal",
+            description="Personal assistant",
+            tags=["x-lumen", "personality", "personal"],
+        )
+
+        with patch.object(web, "_init_brain_from_config", _noop_init_brain):
+            response = self.client.post(
+                "/api/setup",
+                json={
+                    "entry_path": "uso_personal",
+                    "active_personality": "x-lumen-personal",
+                    "language": "es",
+                    "model": "deepseek/deepseek-chat",
+                    "api_key_env": "DEEPSEEK_API_KEY",
+                    "api_key": "sk-test",
+                    "port": 3000,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "ok")
+        saved = yaml.safe_load(web.CONFIG_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(saved["active_personality"], "x-lumen-personal")
+        self.assertTrue(
+            (web.PKG_DIR / "modules" / "x-lumen-personal" / "module.yaml").exists()
+        )
+
+    def test_api_setup_rejects_wrong_personality_for_entry_path(self):
+        self._write_catalog_personality(
+            "x-lumen-negocio",
+            display_name="Negocio",
+            description="Business assistant",
+            tags=["x-lumen", "personality", "negocio"],
+        )
+
+        with patch.object(web, "_init_brain_from_config", _noop_init_brain):
+            response = self.client.post(
+                "/api/setup",
+                json={
+                    "entry_path": "uso_personal",
+                    "active_personality": "x-lumen-negocio",
+                    "language": "es",
+                    "model": "deepseek/deepseek-chat",
+                    "api_key_env": "DEEPSEEK_API_KEY",
+                    "api_key": "sk-test",
+                    "port": 3000,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        saved = yaml.safe_load(web.CONFIG_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(saved["entry_path"], "uso_personal")
+        self.assertNotIn("active_personality", saved)
+        self.assertFalse((web.PKG_DIR / "modules" / "x-lumen-negocio").exists())
+
+    def test_api_setup_from_scratch_clears_active_personality(self):
+        self._write_personality_module(
+            web.PKG_DIR / "modules" / "x-lumen-personal",
+            module_name="x-lumen-personal",
+            persona_name="Installed Personal",
+            flow_intent="installed-personal",
+            tags=["x-lumen", "personality", "personal"],
+        )
+
+        with patch.object(web, "_init_brain_from_config", _noop_init_brain):
+            response = self.client.post(
+                "/api/setup",
+                json={
+                    "entry_path": "desde_cero",
+                    "active_personality": "x-lumen-personal",
+                    "language": "es",
+                    "model": "deepseek/deepseek-chat",
+                    "api_key_env": "DEEPSEEK_API_KEY",
+                    "api_key": "sk-test",
+                    "port": 3000,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        saved = yaml.safe_load(web.CONFIG_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(saved["entry_path"], "desde_cero")
+        self.assertNotIn("active_personality", saved)
+
+    def test_openrouter_callback_installs_catalog_personality_before_save(self):
+        self._write_catalog_personality(
+            "x-lumen-negocio",
+            display_name="Negocio",
+            description="Business assistant",
+            tags=["x-lumen", "personality", "negocio"],
+        )
+        web._oauth_state_store["state-456"] = {
+            "code_verifier": "verifier-456",
+            "model": "meta-llama/llama-3.3-70b-instruct:free",
+            "entry_path": "negocio",
+            "active_personality": "x-lumen-negocio",
+            "language": "es",
+            "port": 3000,
+            "expires_at": 9999999999,
+        }
+
+        with (
+            patch.object(web, "_exchange_openrouter_code", return_value="or-key-456"),
+            patch.object(web, "_init_brain_from_config", _noop_init_brain),
+        ):
+            response = self.client.get(
+                "/oauth/openrouter/callback",
+                params={"code": "code-456", "state": "state-456"},
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 307)
+        saved = yaml.safe_load(web.CONFIG_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(saved["active_personality"], "x-lumen-negocio")
+        self.assertTrue(
+            (web.PKG_DIR / "modules" / "x-lumen-negocio" / "module.yaml").exists()
+        )
 
     def test_uninstall_active_personality_clears_config_and_falls_back_runtime(self):
         pkg_dir = self._make_runtime_pkg()
@@ -349,6 +529,7 @@ class OpenRouterOAuthTests(unittest.TestCase):
         module_name: str,
         persona_name: str,
         flow_intent: str,
+        tags: list[str] | None = None,
     ):
         (module_dir / "flows").mkdir(parents=True, exist_ok=True)
         (module_dir / "module.yaml").write_text(
@@ -356,7 +537,7 @@ class OpenRouterOAuthTests(unittest.TestCase):
                 {
                     "name": module_name,
                     "display_name": persona_name,
-                    "tags": ["x-lumen", "personality"],
+                    "tags": tags or ["x-lumen", "personality"],
                     "personality": "personality.yaml",
                     "onboarding_flow": "flows/onboarding.yaml",
                 },
@@ -376,6 +557,65 @@ class OpenRouterOAuthTests(unittest.TestCase):
                 {"intent": flow_intent, "triggers": ["start"]},
                 sort_keys=False,
             ),
+            encoding="utf-8",
+        )
+
+    def _write_catalog_personality(
+        self,
+        module_name: str,
+        *,
+        display_name: str,
+        description: str,
+        tags: list[str],
+    ):
+        catalog_dir = web.PKG_DIR / "catalog"
+        catalog_dir.mkdir(parents=True, exist_ok=True)
+        kit_dir = catalog_dir / "kits" / module_name
+        kit_dir.mkdir(parents=True, exist_ok=True)
+        (kit_dir / "module.yaml").write_text(
+            yaml.dump(
+                {
+                    "name": module_name,
+                    "display_name": display_name,
+                    "description": description,
+                    "version": "1.0.0",
+                    "tags": tags,
+                    "personality": "personality.yaml",
+                },
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+        (kit_dir / "personality.yaml").write_text(
+            yaml.dump(
+                {"identity": {"name": display_name, "role": "Assistant"}},
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+        index_path = catalog_dir / "index.yaml"
+        current = (
+            yaml.safe_load(index_path.read_text(encoding="utf-8"))
+            if index_path.exists()
+            else {"modules": []}
+        ) or {"modules": []}
+        modules = [
+            entry
+            for entry in current.get("modules", [])
+            if entry.get("name") != module_name
+        ]
+        modules.append(
+            {
+                "name": module_name,
+                "display_name": display_name,
+                "description": description,
+                "version": "1.0.0",
+                "tags": tags,
+                "path": f"kits/{module_name}",
+            }
+        )
+        (catalog_dir / "index.yaml").write_text(
+            yaml.dump({"modules": modules}, sort_keys=False),
             encoding="utf-8",
         )
 

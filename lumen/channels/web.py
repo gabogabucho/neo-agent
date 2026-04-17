@@ -51,6 +51,10 @@ OPENROUTER_CURATED_MODELS = {
 }
 OPENROUTER_STATE_TTL_SECONDS = 600
 VALID_ENTRY_PATHS = {"uso_personal", "negocio", "desde_cero"}
+PERSONALITY_ENTRY_TAGS = {
+    "uso_personal": {"personality", "personal"},
+    "negocio": {"personality", "negocio"},
+}
 _oauth_state_store: dict[str, dict] = {}
 _oauth_state_lock = threading.Lock()
 
@@ -79,6 +83,7 @@ def _merge_save_config(updates: dict, *, removals: set[str] | None = None) -> di
     merged.update(_sanitize_config_updates(updates))
     for key in removals or set():
         merged.pop(key, None)
+    _enforce_personality_selection_rules(merged)
     LUMEN_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text(
         yaml.dump(merged, default_flow_style=False),
@@ -101,14 +106,153 @@ def _sanitize_config_updates(updates: dict) -> dict:
     return sanitized
 
 
-def _is_installed_personality_module(module_name: str) -> bool:
+def _normalize_module_tags(
+    tags: list[str] | tuple[str, ...] | set[str] | None,
+) -> set[str]:
+    return {str(tag).strip().lower() for tag in (tags or [])}
+
+
+def _required_personality_tags(entry_path: str | None) -> set[str] | None:
+    return PERSONALITY_ENTRY_TAGS.get(str(entry_path or "").strip().lower())
+
+
+def _installed_personality_manifest(module_name: str) -> dict | None:
     module_dir = PKG_DIR / "modules" / str(module_name)
     manifest_path, manifest = load_module_manifest(module_dir)
     if manifest_path is None:
+        return None
+    return manifest
+
+
+def _module_matches_setup_personality_tags(
+    module_info: dict, entry_path: str | None
+) -> bool:
+    required_tags = _required_personality_tags(entry_path)
+    if required_tags is None:
+        return False
+    return required_tags.issubset(_normalize_module_tags(module_info.get("tags")))
+
+
+def _is_valid_personality_for_entry_path(
+    module_name: str, entry_path: str | None = None
+) -> bool:
+    manifest = _installed_personality_manifest(module_name)
+    if manifest is None:
         return False
 
-    tags = {str(tag).strip().lower() for tag in (manifest.get("tags") or [])}
-    return "personality" in tags
+    tags = _normalize_module_tags(manifest.get("tags"))
+    if "personality" not in tags:
+        return False
+
+    required_tags = _required_personality_tags(entry_path)
+    if required_tags is None:
+        return True
+
+    return required_tags.issubset(tags)
+
+
+def _enforce_personality_selection_rules(config: dict):
+    active_personality = config.get("active_personality")
+    if not active_personality:
+        return
+
+    entry_path = config.get("entry_path")
+    if entry_path == "desde_cero":
+        config.pop("active_personality", None)
+        return
+
+    if not _is_valid_personality_for_entry_path(active_personality, entry_path):
+        config.pop("active_personality", None)
+
+
+def _is_installed_personality_module(module_name: str) -> bool:
+    return _is_valid_personality_for_entry_path(module_name)
+
+
+def _build_setup_installer():
+    from lumen.core.catalog import Catalog
+    from lumen.core.connectors import ConnectorRegistry
+    from lumen.core.installer import Installer
+
+    catalog = Catalog(PKG_DIR / "catalog" / "index.yaml")
+    installer = Installer(PKG_DIR, ConnectorRegistry(), memory=None, catalog=catalog)
+    return catalog, installer
+
+
+def _list_setup_personality_modules(entry_path: str | None) -> list[dict]:
+    required_tags = _required_personality_tags(entry_path)
+    if required_tags is None:
+        return []
+
+    catalog, installer = _build_setup_installer()
+    modules_by_name: dict[str, dict] = {}
+
+    for module in catalog.list_all():
+        if not _module_matches_setup_personality_tags(module, entry_path):
+            continue
+        modules_by_name[module["name"]] = {
+            "name": module["name"],
+            "display_name": module.get("display_name", module["name"]),
+            "description": module.get("description", ""),
+            "tags": module.get("tags", []),
+            "installed": False,
+        }
+
+    for module in installer.list_installed():
+        if not _module_matches_setup_personality_tags(module, entry_path):
+            continue
+        item = modules_by_name.setdefault(
+            module["name"],
+            {
+                "name": module["name"],
+                "display_name": module.get("display_name", module["name"]),
+                "description": module.get("description", ""),
+                "tags": module.get("tags", []),
+                "installed": True,
+            },
+        )
+        item["installed"] = True
+
+    return sorted(
+        modules_by_name.values(),
+        key=lambda item: (
+            str(item.get("display_name") or item["name"]).lower(),
+            item["name"],
+        ),
+    )
+
+
+def _resolve_setup_active_personality(
+    entry_path: str | None, module_name: str | None
+) -> str | None:
+    if not module_name or entry_path == "desde_cero":
+        return None
+
+    if not _required_personality_tags(entry_path):
+        return None
+
+    selected_name = str(module_name).strip()
+    if not selected_name:
+        return None
+
+    if _is_valid_personality_for_entry_path(selected_name, entry_path):
+        return selected_name
+
+    catalog, installer = _build_setup_installer()
+    module_info = catalog.get(selected_name)
+    if not module_info or not _module_matches_setup_personality_tags(
+        module_info, entry_path
+    ):
+        return None
+
+    result = installer.install_from_catalog(selected_name)
+    if result.get("status") not in {"installed", "already_installed"}:
+        return None
+
+    if _is_valid_personality_for_entry_path(selected_name, entry_path):
+        return selected_name
+
+    return None
 
 
 def _has_awakened() -> bool:
@@ -252,11 +396,21 @@ async def setup_page(request: Request):
     return templates.TemplateResponse(request, "setup.html")
 
 
+@app.get("/api/setup/personalities")
+async def api_setup_personalities(entry_path: str | None = None):
+    """List setup-safe personality modules for the selected entry path."""
+    return {"modules": _list_setup_personality_modules(entry_path)}
+
+
 @app.post("/api/setup")
 async def api_setup(request: Request):
     """Save configuration from the web setup wizard."""
     try:
         body = await request.json()
+        resolved_personality = _resolve_setup_active_personality(
+            body.get("entry_path"),
+            body.get("active_personality"),
+        )
 
         config = {
             "language": body.get("language", "en"),
@@ -269,8 +423,8 @@ async def api_setup(request: Request):
             config["api_key_env"] = body["api_key_env"]
         if body.get("api_key"):
             config["api_key"] = body["api_key"]
-        if body.get("active_personality"):
-            config["active_personality"] = body["active_personality"]
+        if resolved_personality:
+            config["active_personality"] = resolved_personality
 
         _merge_save_config(config)
 
@@ -352,13 +506,17 @@ async def openrouter_oauth_callback(
 
     try:
         api_key = _exchange_openrouter_code(code, oauth_state["code_verifier"])
+        resolved_personality = _resolve_setup_active_personality(
+            oauth_state.get("entry_path"),
+            oauth_state.get("active_personality"),
+        )
         _merge_save_config(
             {
                 "language": oauth_state.get("language", "en"),
                 "port": oauth_state.get("port", 3000),
                 "model": oauth_state["model"],
                 "entry_path": oauth_state.get("entry_path"),
-                "active_personality": oauth_state.get("active_personality"),
+                "active_personality": resolved_personality,
                 "api_key": api_key,
                 "api_key_env": "OPENROUTER_API_KEY",
             }
