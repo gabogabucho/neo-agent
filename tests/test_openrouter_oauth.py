@@ -44,6 +44,7 @@ class OpenRouterOAuthTests(unittest.TestCase):
         response = self.client.get(
             "/oauth/openrouter/start",
             params={
+                "entry_path": "negocio",
                 "language": "es",
                 "model": "deepseek/deepseek-chat:free",
                 "port": 4312,
@@ -65,6 +66,7 @@ class OpenRouterOAuthTests(unittest.TestCase):
 
         state = query["state"][0]
         stored = web._oauth_state_store[state]
+        self.assertEqual(stored["entry_path"], "negocio")
         self.assertEqual(stored["language"], "es")
         self.assertEqual(stored["model"], "deepseek/deepseek-chat:free")
         self.assertEqual(stored["port"], 4312)
@@ -72,12 +74,19 @@ class OpenRouterOAuthTests(unittest.TestCase):
 
     def test_openrouter_callback_merge_saves_config(self):
         web.CONFIG_PATH.write_text(
-            yaml.dump({"language": "en", "port": 9999, "mcp": {"servers": {"x": {}}}}),
+            yaml.dump(
+                {
+                    "language": "en",
+                    "port": 9999,
+                    "mcp": {"servers": {"x": {}}},
+                }
+            ),
             encoding="utf-8",
         )
         web._oauth_state_store["state-123"] = {
             "code_verifier": "verifier-123",
             "model": "meta-llama/llama-3.3-70b-instruct:free",
+            "entry_path": "uso_personal",
             "language": "es",
             "port": 3000,
             "expires_at": 9999999999,
@@ -100,6 +109,7 @@ class OpenRouterOAuthTests(unittest.TestCase):
         self.assertEqual(response.status_code, 307)
         self.assertEqual(response.headers["location"], "/")
         config = yaml.safe_load(web.CONFIG_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(config["entry_path"], "uso_personal")
         self.assertEqual(config["language"], "es")
         self.assertEqual(config["port"], 3000)
         self.assertEqual(config["model"], "meta-llama/llama-3.3-70b-instruct:free")
@@ -120,6 +130,7 @@ class OpenRouterOAuthTests(unittest.TestCase):
             response = self.client.post(
                 "/api/setup",
                 json={
+                    "entry_path": "desde_cero",
                     "language": "es",
                     "model": "deepseek/deepseek-chat",
                     "api_key_env": "DEEPSEEK_API_KEY",
@@ -131,11 +142,55 @@ class OpenRouterOAuthTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "ok")
         config = yaml.safe_load(web.CONFIG_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(config["entry_path"], "desde_cero")
         self.assertEqual(config["language"], "es")
         self.assertEqual(config["model"], "deepseek/deepseek-chat")
         self.assertEqual(config["api_key_env"], "DEEPSEEK_API_KEY")
         self.assertEqual(config["api_key"], "sk-test")
         self.assertEqual(config["mcp"], {"servers": {"local": {"command": "node"}}})
+
+    def test_merge_save_config_only_writes_active_personality_when_installed(self):
+        personality_dir = web.PKG_DIR / "modules" / "test-web-personality"
+        personality_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = personality_dir / "module.yaml"
+        created_files = [manifest_path]
+        created_dirs = [personality_dir]
+        manifest_path.write_text(
+            yaml.dump(
+                {
+                    "name": "test-web-personality",
+                    "tags": ["x-lumen", "personality"],
+                },
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+
+        try:
+            merged = web._merge_save_config(
+                {
+                    "entry_path": "uso_personal",
+                    "active_personality": "test-web-personality",
+                }
+            )
+            self.assertEqual(merged["entry_path"], "uso_personal")
+            self.assertEqual(merged["active_personality"], "test-web-personality")
+
+            merged = web._merge_save_config(
+                {
+                    "entry_path": "invalid-path",
+                    "active_personality": "missing-personality",
+                }
+            )
+            self.assertEqual(merged["entry_path"], "uso_personal")
+            self.assertEqual(merged["active_personality"], "test-web-personality")
+        finally:
+            for file_path in created_files:
+                if file_path.exists():
+                    file_path.unlink()
+            for directory in created_dirs:
+                if directory.exists():
+                    directory.rmdir()
 
 
 if __name__ == "__main__":

@@ -26,6 +26,7 @@ from fastapi.templating import Jinja2Templates
 from lumen.core.registry import CapabilityKind
 from lumen.core.runtime import bootstrap_runtime, refresh_runtime_registry
 from lumen.core.session import SessionManager
+from lumen.core.module_manifest import load_module_manifest
 
 
 # State — initialized lazily after web setup or by CLI
@@ -45,6 +46,7 @@ OPENROUTER_CURATED_MODELS = {
     "google/gemma-3-27b-it:free",
 }
 OPENROUTER_STATE_TTL_SECONDS = 600
+VALID_ENTRY_PATHS = {"uso_personal", "negocio", "desde_cero"}
 _oauth_state_store: dict[str, dict] = {}
 _oauth_state_lock = threading.Lock()
 
@@ -70,13 +72,37 @@ def _load_config() -> dict:
 
 def _merge_save_config(updates: dict) -> dict:
     merged = _load_config()
-    merged.update({k: v for k, v in updates.items() if v is not None})
+    merged.update(_sanitize_config_updates(updates))
     LUMEN_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text(
         yaml.dump(merged, default_flow_style=False),
         encoding="utf-8",
     )
     return merged
+
+
+def _sanitize_config_updates(updates: dict) -> dict:
+    sanitized = {k: v for k, v in updates.items() if v is not None}
+
+    entry_path = sanitized.get("entry_path")
+    if entry_path not in VALID_ENTRY_PATHS:
+        sanitized.pop("entry_path", None)
+
+    active_personality = sanitized.get("active_personality")
+    if active_personality and not _is_installed_personality_module(active_personality):
+        sanitized.pop("active_personality", None)
+
+    return sanitized
+
+
+def _is_installed_personality_module(module_name: str) -> bool:
+    module_dir = PKG_DIR / "modules" / str(module_name)
+    manifest_path, manifest = load_module_manifest(module_dir)
+    if manifest_path is None:
+        return False
+
+    tags = {str(tag).strip().lower() for tag in (manifest.get("tags") or [])}
+    return "personality" in tags
 
 
 def _has_awakened() -> bool:
@@ -230,12 +256,15 @@ async def api_setup(request: Request):
             "language": body.get("language", "en"),
             "model": body.get("model", "deepseek/deepseek-chat"),
             "port": body.get("port", 3000),
+            "entry_path": body.get("entry_path"),
         }
 
         if body.get("api_key_env"):
             config["api_key_env"] = body["api_key_env"]
         if body.get("api_key"):
             config["api_key"] = body["api_key"]
+        if body.get("active_personality"):
+            config["active_personality"] = body["active_personality"]
 
         _merge_save_config(config)
 
@@ -260,6 +289,8 @@ async def openrouter_oauth_start(
     language: str = "en",
     model: str = "deepseek/deepseek-chat:free",
     port: int = 3000,
+    entry_path: str | None = None,
+    active_personality: str | None = None,
 ):
     """Start a local-only OpenRouter PKCE flow."""
     if model not in OPENROUTER_CURATED_MODELS:
@@ -280,6 +311,8 @@ async def openrouter_oauth_start(
             "model": model,
             "language": selected_language,
             "port": port,
+            "entry_path": entry_path,
+            "active_personality": active_personality,
             "expires_at": time() + OPENROUTER_STATE_TTL_SECONDS,
         },
     )
@@ -318,6 +351,8 @@ async def openrouter_oauth_callback(
                 "language": oauth_state.get("language", "en"),
                 "port": oauth_state.get("port", 3000),
                 "model": oauth_state["model"],
+                "entry_path": oauth_state.get("entry_path"),
+                "active_personality": oauth_state.get("active_personality"),
                 "api_key": api_key,
                 "api_key_env": "OPENROUTER_API_KEY",
             }

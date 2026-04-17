@@ -71,11 +71,40 @@
     }
 
     /* Language cards */
+    .entry-grid,
     .lang-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 12px;
       margin-bottom: 32px;
+    }
+
+    .entry-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .entry-card {
+      background: #111827;
+      border: 2px solid #1e293b;
+      border-radius: 12px;
+      padding: 20px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .entry-card:hover { border-color: #3b82f6; }
+    .entry-card.selected { border-color: #3b82f6; background: rgba(59,130,246,0.1); }
+
+    .entry-card .entry-name {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .entry-card .entry-description {
+      color: #9ca3af;
+      font-size: 13px;
+      line-height: 1.5;
     }
 
     .lang-card {
@@ -277,7 +306,7 @@
         <circle cx="110" cy="120" r="2.5" fill="#3b82f6" opacity="0.7"/>
       </svg>
       <h1>Welcome to <span>Lumen</span></h1>
-      <p>Let's set up your agent in 3 steps.</p>
+      <p>Let's set up your agent in 4 steps.</p>
     </div>
 
     <!-- Progress -->
@@ -285,11 +314,37 @@
       <div class="progress-dot active" id="dot-0"></div>
       <div class="progress-dot" id="dot-1"></div>
       <div class="progress-dot" id="dot-2"></div>
+      <div class="progress-dot" id="dot-3"></div>
     </div>
 
-    <!-- Step 1: Language -->
+    <!-- Step 1: Entry path -->
     <div class="step active" id="step-0">
-      <div class="step-label">Step 1 of 3</div>
+      <div class="step-label">Step 1 of 4</div>
+      <div class="step-title">How are you starting?</div>
+
+      <div class="entry-grid">
+        <div class="entry-card" data-entry-path="uso_personal" onclick="selectEntryPath(this)">
+          <div class="entry-name">Uso personal</div>
+          <div class="entry-description">Quiero usar Lumen para mi propio trabajo y organización.</div>
+        </div>
+        <div class="entry-card" data-entry-path="negocio" onclick="selectEntryPath(this)">
+          <div class="entry-name">Negocio</div>
+          <div class="entry-description">Lo estoy evaluando para un equipo, clientes o procesos del negocio.</div>
+        </div>
+        <div class="entry-card" data-entry-path="desde_cero" onclick="selectEntryPath(this)">
+          <div class="entry-name">Desde cero</div>
+          <div class="entry-description">Soy nuevo en este tipo de agente y quiero empezar desde lo básico.</div>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btn-next-0" disabled onclick="nextStep()">Continue</button>
+      </div>
+    </div>
+
+    <!-- Step 2: Language -->
+    <div class="step" id="step-1">
+      <div class="step-label">Step 2 of 4</div>
       <div class="step-title">Choose your language</div>
 
       <div class="lang-grid">
@@ -306,13 +361,14 @@
       </div>
 
       <div class="btn-row">
-        <button class="btn btn-primary" id="btn-next-0" disabled onclick="nextStep()">Continue</button>
+        <button class="btn btn-ghost" onclick="prevStep()">Back</button>
+        <button class="btn btn-primary" id="btn-next-1" disabled onclick="nextStep()">Continue</button>
       </div>
     </div>
 
-    <!-- Step 2: Model -->
-    <div class="step" id="step-1">
-      <div class="step-label">Step 2 of 3</div>
+    <!-- Step 3: Model -->
+    <div class="step" id="step-2">
+      <div class="step-label">Step 3 of 4</div>
       <div class="step-title">Choose your model</div>
 
       <div class="provider-grid">
@@ -345,13 +401,13 @@
 
       <div class="btn-row">
         <button class="btn btn-ghost" onclick="prevStep()">Back</button>
-        <button class="btn btn-primary" id="btn-next-1" disabled onclick="nextStep()">Continue</button>
+        <button class="btn btn-primary" id="btn-next-2" disabled onclick="nextStep()">Continue</button>
       </div>
     </div>
 
-    <!-- Step 3: API Key -->
-    <div class="step" id="step-2">
-      <div class="step-label">Step 3 of 3</div>
+    <!-- Step 4: API Key -->
+    <div class="step" id="step-3">
+      <div class="step-label">Step 4 of 4</div>
       <div class="step-title" id="key-title">Enter your API key</div>
 
       <div id="openrouter-model-section" style="display:none; margin-bottom:24px;">
@@ -406,14 +462,21 @@
 
   <script>
     let currentStep = 0;
-    let config = { language: '', provider: '', model: '', api_key_env: '', api_key: '' };
+    let config = { entry_path: '', language: '', provider: '', model: '', api_key_env: '', api_key: '' };
+
+    function selectEntryPath(el) {
+      document.querySelectorAll('.entry-card').forEach(c => c.classList.remove('selected'));
+      el.classList.add('selected');
+      config.entry_path = el.dataset.entryPath;
+      document.getElementById('btn-next-0').disabled = false;
+    }
 
     // --- Language selection ---
     function selectLang(el) {
       document.querySelectorAll('.lang-card').forEach(c => c.classList.remove('selected'));
       el.classList.add('selected');
       config.language = el.dataset.lang;
-      document.getElementById('btn-next-0').disabled = false;
+      document.getElementById('btn-next-1').disabled = false;
     }
 
     // --- Provider selection ---
@@ -423,7 +486,7 @@
       config.provider = el.dataset.provider || '';
       config.model = el.dataset.model;
       config.api_key_env = el.dataset.env;
-      document.getElementById('btn-next-1').disabled = false;
+      document.getElementById('btn-next-2').disabled = false;
     }
 
     function selectOpenRouterModel(el) {
@@ -444,7 +507,7 @@
       });
 
       // Update step 3 based on provider
-      if (n === 2) {
+      if (n === 3) {
         const isOpenRouter = config.provider === 'openrouter';
         document.getElementById('openrouter-model-section').style.display = isOpenRouter ? 'block' : 'none';
 
@@ -491,6 +554,7 @@
         btn.disabled = true;
         btn.textContent = 'Connecting to OpenRouter...';
         const params = new URLSearchParams({
+          entry_path: config.entry_path,
           language: config.language,
           model: config.model,
           port: String(parseInt(location.port) || 3000),
@@ -517,6 +581,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            entry_path: config.entry_path,
             language: config.language,
             model: config.model,
             api_key_env: config.api_key_env || null,
