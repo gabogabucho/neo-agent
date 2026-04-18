@@ -1,8 +1,10 @@
 import json
+import os
 import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import yaml
 from fastapi.testclient import TestClient
@@ -83,6 +85,7 @@ class WebSurfaceTests(unittest.TestCase):
         self.client = TestClient(web.app)
 
     def tearDown(self):
+        os.environ.pop("LUMEN_TEST_SETTINGS_API_KEY", None)
         self.temp_dir.cleanup()
         web.LUMEN_DIR = self.original_lumen_dir
         web.CONFIG_PATH = self.original_config_path
@@ -315,6 +318,88 @@ class WebSurfaceTests(unittest.TestCase):
         self.assertEqual(logout.status_code, 200)
         denied_again = self.client.get("/api/status")
         self.assertEqual(denied_again.status_code, 401)
+
+    def test_api_settings_merges_and_refreshes_runtime_config(self):
+        config = {
+            "provider": "DeepSeek",
+            "model": "deepseek/deepseek-chat",
+            "language": "en",
+            "api_key_env": "DEEPSEEK_API_KEY",
+            "api_key": "old-key",
+            "mcp": {"servers": {"local": {"command": "node"}}},
+        }
+        web.CONFIG_PATH.write_text(yaml.dump(config), encoding="utf-8")
+        web._config = dict(config)
+        web._brain = type(
+            "BrainStub",
+            (),
+            {
+                "model": config["model"],
+                "marketplace": type("MarketplaceStub", (), {"config": dict(config)})(),
+                "module_manager": None,
+            },
+        )()
+
+        with patch.object(web, "refresh_runtime_registry") as refresh_runtime_registry:
+            response = self.client.post(
+                "/api/settings",
+                json={
+                    "provider": "OpenAI",
+                    "model": "gpt-4o-mini",
+                    "api_key_env": "LUMEN_TEST_SETTINGS_API_KEY",
+                    "api_key": "new-key",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "ok")
+
+        saved = yaml.safe_load(web.CONFIG_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(saved["provider"], "OpenAI")
+        self.assertEqual(saved["model"], "gpt-4o-mini")
+        self.assertEqual(saved["api_key_env"], "LUMEN_TEST_SETTINGS_API_KEY")
+        self.assertEqual(saved["api_key"], "new-key")
+        self.assertEqual(saved["mcp"], {"servers": {"local": {"command": "node"}}})
+        self.assertEqual(web._config["provider"], "OpenAI")
+        self.assertEqual(web._brain.model, "gpt-4o-mini")
+        self.assertEqual(web._brain.marketplace.config["provider"], "OpenAI")
+        self.assertEqual(os.environ["LUMEN_TEST_SETTINGS_API_KEY"], "new-key")
+        refresh_runtime_registry.assert_called_once()
+
+    def test_api_settings_requires_owner_auth_in_serve_mode(self):
+        web.configure_access_mode("serve")
+        config = {
+            "provider": "DeepSeek",
+            "model": "deepseek/deepseek-chat",
+            "language": "en",
+            "server_mode": True,
+            "server_secret": "test-server-secret",
+            "owner_secret_hash": web._hash_secret("2468"),
+        }
+        web.CONFIG_PATH.write_text(yaml.dump(config), encoding="utf-8")
+        web._config = dict(config)
+        web._brain = type(
+            "BrainStub",
+            (),
+            {"model": config["model"], "marketplace": None, "module_manager": None},
+        )()
+
+        denied = self.client.post(
+            "/api/settings",
+            json={"provider": "OpenAI", "model": "gpt-4o-mini"},
+        )
+        self.assertEqual(denied.status_code, 401)
+
+        login = self.client.post("/api/login", json={"secret": "2468"})
+        self.assertEqual(login.status_code, 200)
+
+        with patch.object(web, "refresh_runtime_registry"):
+            allowed = self.client.post(
+                "/api/settings",
+                json={"provider": "OpenAI", "model": "gpt-4o-mini"},
+            )
+
+        self.assertEqual(allowed.status_code, 200)
 
 
 class SessionManagerTests(unittest.TestCase):

@@ -10,6 +10,7 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import threading
 from contextlib import asynccontextmanager
@@ -313,6 +314,78 @@ def _sanitize_config_updates(updates: dict) -> dict:
     return sanitized
 
 
+def _normalize_optional_text(value) -> str | None:
+    if value is None:
+        return None
+    return str(value).strip()
+
+
+def _infer_provider_name(config: dict | None = None) -> str:
+    loaded = config if config is not None else _config
+    provider = _normalize_optional_text((loaded or {}).get("provider"))
+    if provider:
+        return provider
+
+    model = str((loaded or {}).get("model") or "").strip().lower()
+    if model.startswith("deepseek/"):
+        return "DeepSeek"
+    if model.startswith("gpt-") or model.startswith("openai/"):
+        return "OpenAI"
+    if model.startswith("claude") or model.startswith("anthropic/"):
+        return "Anthropic"
+    if model.startswith("ollama/"):
+        return "Ollama"
+    if ":free" in model or model.startswith("meta-") or model.startswith("google/"):
+        return "OpenRouter"
+    return "Custom"
+
+
+def _apply_config_api_key_env(config: dict, previous_config: dict | None = None) -> None:
+    previous = previous_config or {}
+    previous_env = _normalize_optional_text(previous.get("api_key_env"))
+    previous_key = _normalize_optional_text(previous.get("api_key"))
+    current_env = _normalize_optional_text(config.get("api_key_env"))
+    current_key = _normalize_optional_text(config.get("api_key"))
+
+    if previous_env and previous_env != current_env and os.environ.get(previous_env) == previous_key:
+        os.environ.pop(previous_env, None)
+
+    if current_env and current_key:
+        os.environ[current_env] = current_key
+
+
+async def _refresh_runtime_from_config(previous_config: dict | None = None) -> bool:
+    """Apply saved config changes to the live web runtime."""
+    global _config, _locale
+
+    latest_config = _load_config() if _has_config() else {}
+    if not latest_config:
+        return False
+
+    _apply_config_api_key_env(latest_config, previous_config)
+    previous_language = str((previous_config or {}).get("language") or "en")
+
+    if _brain is None:
+        return await _init_brain_from_config()
+
+    _config = latest_config
+    _locale = _load_ui_locale(_config.get("language", "en"))
+    _brain.model = _config.get("model", _brain.model)
+
+    if getattr(_brain, "marketplace", None) is not None:
+        _brain.marketplace.config = _config
+
+    if isinstance(getattr(_brain, "module_manager", None), ModuleRuntimeManager):
+        _brain.module_manager.config = _config
+
+    refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, active_channels=["web"])
+
+    if str(_config.get("language") or "en") != previous_language:
+        reload_runtime_personality_surface(_brain, config=_config, pkg_dir=PKG_DIR)
+
+    return True
+
+
 def _normalize_module_tags(
     tags: list[str] | tuple[str, ...] | set[str] | None,
 ) -> set[str]:
@@ -536,6 +609,9 @@ async def _init_brain_from_config():
     global _brain, _locale, _config
 
     latest_config = _load_config() if _has_config() else {}
+
+    if latest_config:
+        _apply_config_api_key_env(latest_config, _config)
 
     if _brain is not None:
         if latest_config:
@@ -1012,7 +1088,10 @@ async def dashboard(request: Request):
         "dashboard.html",
         context={
             "ui": ui,
+            "provider": _infer_provider_name(_config),
             "model": _config.get("model", "not configured"),
+            "api_key_env": _config.get("api_key_env", ""),
+            "has_api_key": bool(_config.get("api_key")),
             "language": _config.get("language", "en"),
             "current_personality": _current_dashboard_personality(),
             "version": "0.1.0",
@@ -1023,6 +1102,60 @@ async def dashboard(request: Request):
             else 0,
         },
     )
+
+
+@app.post("/api/settings")
+async def api_settings(request: Request):
+    """Update dashboard settings without re-running onboarding."""
+    global _config
+
+    loaded = _load_config()
+    if not _is_configured(loaded):
+        return JSONResponse(status_code=400, content={"error": "not_configured"})
+
+    guard = _require_owner_access(request, loaded)
+    if guard is not None:
+        return guard
+
+    body = await request.json()
+    model = _normalize_optional_text(body.get("model"))
+    if not model:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "error": "Model is required."},
+        )
+
+    updates = {"model": model}
+    removals: set[str] = set()
+
+    provider = _normalize_optional_text(body.get("provider"))
+    if provider:
+        updates["provider"] = provider
+    elif "provider" in body:
+        removals.add("provider")
+
+    api_key_env = _normalize_optional_text(body.get("api_key_env"))
+    if api_key_env:
+        updates["api_key_env"] = api_key_env
+    elif "api_key_env" in body:
+        removals.add("api_key_env")
+
+    api_key = _normalize_optional_text(body.get("api_key"))
+    if api_key:
+        updates["api_key"] = api_key
+
+    _config = _merge_save_config(updates, removals=removals)
+    await _refresh_runtime_from_config(loaded)
+
+    return {
+        "status": "ok",
+        "config": {
+            "provider": _infer_provider_name(_config),
+            "model": _config.get("model", ""),
+            "api_key_env": _config.get("api_key_env", ""),
+            "has_api_key": bool(_config.get("api_key")),
+        },
+    }
 
 
 @app.post("/api/awakened")

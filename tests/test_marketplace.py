@@ -294,6 +294,8 @@ class MarketplaceTests(unittest.TestCase):
             template.index('id="tab-kits"'),
             template.index('id="tab-skills"'),
         )
+        self.assertIn('id="settings-form"', template)
+        self.assertIn("fetch('/api/settings'", template)
 
     def test_dashboard_renders_configured_active_personality(self):
         original_brain = web._brain
