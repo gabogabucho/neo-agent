@@ -1,356 +1,258 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Lumen — Setup</title>
+  <link rel="icon" type="image/png" href="/static/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  {% include "_partials/tokens.html" %}
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600&display=swap');
-
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
-      font-family: 'Inter', sans-serif;
-      background: #050a18;
-      color: #e5e7eb;
       min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
+      padding: 32px 16px;
     }
 
-    .setup-container {
-      width: 100%;
-      max-width: 560px;
-      padding: 24px;
-    }
+    .setup-container { width: 100%; max-width: 620px; }
 
-    /* Logo */
+    /* Logo header */
     .logo {
       text-align: center;
-      margin-bottom: 40px;
+      margin-bottom: var(--lumen-s-7);
     }
-
-    .logo svg { width: 64px; height: 40px; margin-bottom: 16px; }
-
+    .logo img {
+      width: 72px; height: 72px;
+      object-fit: contain;
+      border-radius: 18px;
+      box-shadow: var(--lumen-shadow);
+    }
     .logo h1 {
-      font-size: 28px;
-      font-weight: 200;
-      letter-spacing: 0.1em;
+      margin-top: var(--lumen-s-4);
+      font-size: 32px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: var(--lumen-ink);
     }
-
-    .logo h1 span { font-weight: 600; color: #3b82f6; }
-
+    .logo h1 span { color: var(--lumen-blue); }
     .logo p {
-      font-size: 14px;
-      color: #6b7280;
-      margin-top: 8px;
+      margin-top: var(--lumen-s-2);
+      font-size: 15px;
+      color: var(--lumen-ink-soft);
     }
 
     /* Steps */
-    .step { display: none; animation: fadeIn 0.4s ease-out; }
+    .step { display: none; animation: fadeIn 0.35s ease-out; }
     .step.active { display: block; }
-
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(12px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
     .step-label {
       font-size: 12px;
       text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: #6b7280;
-      margin-bottom: 8px;
+      letter-spacing: 0.12em;
+      color: var(--lumen-mute);
+      margin-bottom: var(--lumen-s-2);
     }
-
     .step-title {
-      font-size: 22px;
-      font-weight: 500;
-      margin-bottom: 24px;
+      font-size: 24px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      margin-bottom: var(--lumen-s-5);
     }
 
-    /* Language cards */
-    .entry-grid,
-    .lang-grid {
+    /* Cards (entry / lang / provider / personality — same primitive) */
+    .l-card {
+      background: var(--lumen-surface);
+      border: 1px solid var(--lumen-line);
+      border-radius: var(--lumen-r-md);
+      padding: 18px;
+      cursor: pointer;
+      transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+    }
+    .l-card:hover { border-color: var(--lumen-blue-soft); box-shadow: var(--lumen-shadow-sm); }
+    .l-card.selected {
+      border-color: var(--lumen-blue);
+      background: var(--lumen-lavender);
+      box-shadow: var(--lumen-shadow);
+    }
+
+    .entry-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: var(--lumen-s-6); }
+    .lang-grid, .provider-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 12px;
-      margin-bottom: 32px;
+      margin-bottom: var(--lumen-s-6);
     }
 
-    .entry-grid {
-      grid-template-columns: 1fr;
+    .entry-name, .provider-name { font-size: 16px; font-weight: 600; margin-bottom: 4px; color: var(--lumen-ink); }
+    .entry-description, .provider-model { font-size: 13px; color: var(--lumen-ink-soft); line-height: 1.55; }
+    .provider-model { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+    .entry-tag, .provider-tag {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 500;
+      padding: 3px 10px;
+      border-radius: var(--lumen-r-pill);
+      margin-top: 10px;
     }
+    .tag-recommended { background: rgba(47,158,110,0.12); color: var(--lumen-success); }
+    .tag-local { background: var(--lumen-coral-soft); color: var(--lumen-coral); }
+    .tag-premium { background: var(--lumen-lavender); color: var(--lumen-blue); }
 
-    .entry-card {
-      background: #111827;
-      border: 2px solid #1e293b;
-      border-radius: 12px;
-      padding: 20px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
+    .lang-card { text-align: center; padding: 22px; }
+    .lang-card .flag { font-size: 28px; font-weight: 600; color: var(--lumen-blue); margin-bottom: 6px; letter-spacing: 0.04em; }
+    .lang-card .name { font-size: 15px; font-weight: 500; }
+    .lang-card .native { font-size: 13px; color: var(--lumen-mute); margin-top: 2px; }
 
-    .entry-card:hover { border-color: #3b82f6; }
-    .entry-card.selected { border-color: #3b82f6; background: rgba(59,130,246,0.1); }
-
-    .entry-card .entry-name {
-      font-size: 16px;
-      font-weight: 600;
-      margin-bottom: 6px;
-    }
-
-    .entry-card .entry-description {
-      color: #9ca3af;
-      font-size: 13px;
-      line-height: 1.5;
-    }
-
-    .personality-section {
-      display: none;
-      margin-bottom: 24px;
-    }
-
-    .personality-title {
-      font-size: 13px;
-      color: #9ca3af;
-      margin-bottom: 12px;
-    }
-
-    .personality-grid {
-      display: grid;
-      gap: 12px;
-    }
-
-    .personality-card {
-      background: #111827;
-      border: 2px solid #1e293b;
-      border-radius: 12px;
-      padding: 16px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-
-    .personality-card:hover { border-color: #3b82f6; }
-    .personality-card.selected { border-color: #3b82f6; background: rgba(59,130,246,0.1); }
-
+    /* Personality (compact card variant) */
+    .personality-section { display: none; margin-bottom: var(--lumen-s-5); }
+    .personality-title { font-size: 13px; color: var(--lumen-ink-soft); margin-bottom: var(--lumen-s-3); }
+    .personality-grid { display: grid; gap: 10px; }
+    .personality-card { padding: 14px; }
     .personality-meta {
       display: flex;
       justify-content: space-between;
       gap: 12px;
       align-items: baseline;
-      margin-bottom: 6px;
-    }
-
-    .personality-name { font-size: 14px; font-weight: 600; }
-    .personality-status { font-size: 11px; color: #60a5fa; text-transform: uppercase; }
-    .personality-description { color: #9ca3af; font-size: 13px; line-height: 1.5; }
-    .personality-empty { color: #6b7280; font-size: 13px; }
-
-    .lang-card {
-      background: #111827;
-      border: 2px solid #1e293b;
-      border-radius: 12px;
-      padding: 24px;
-      text-align: center;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-
-    .lang-card:hover { border-color: #3b82f6; }
-    .lang-card.selected { border-color: #3b82f6; background: rgba(59,130,246,0.1); }
-
-    .lang-card .flag { font-size: 32px; margin-bottom: 8px; }
-    .lang-card .name { font-size: 16px; font-weight: 500; }
-    .lang-card .native { font-size: 13px; color: #9ca3af; margin-top: 4px; }
-
-    /* Provider cards */
-    .provider-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-      margin-bottom: 32px;
-    }
-
-    .provider-card {
-      background: #111827;
-      border: 2px solid #1e293b;
-      border-radius: 12px;
-      padding: 20px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-
-    .provider-card:hover { border-color: #3b82f6; }
-    .provider-card.selected { border-color: #3b82f6; background: rgba(59,130,246,0.1); }
-
-    .provider-card .provider-name {
-      font-size: 15px;
-      font-weight: 600;
       margin-bottom: 4px;
     }
-
-    .provider-card .provider-model {
-      font-size: 12px;
-      color: #9ca3af;
-      font-family: monospace;
-    }
-
-    .provider-card .provider-tag {
-      display: inline-block;
-      font-size: 11px;
+    .personality-name { font-size: 14px; font-weight: 600; }
+    .personality-status {
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--lumen-blue);
       padding: 2px 8px;
-      border-radius: 6px;
-      margin-top: 8px;
+      background: var(--lumen-lavender);
+      border-radius: var(--lumen-r-pill);
     }
+    .personality-description { color: var(--lumen-ink-soft); font-size: 13px; line-height: 1.5; }
+    .personality-empty { color: var(--lumen-mute); font-size: 13px; padding: 12px 0; }
 
-    .tag-recommended { background: rgba(16,185,129,0.2); color: #10b981; }
-    .tag-local { background: rgba(168,85,247,0.2); color: #a855f7; }
-    .tag-premium { background: rgba(59,130,246,0.2); color: #3b82f6; }
+    /* Custom module input */
+    #custom-module-section .hint { font-size: 13px; color: var(--lumen-ink-soft); margin-bottom: var(--lumen-s-3); }
+    #custom-module-input {
+      width: 100%;
+      padding: 12px 16px;
+      background: var(--lumen-surface);
+      border: 1px solid var(--lumen-line);
+      border-radius: var(--lumen-r-sm);
+      color: var(--lumen-ink);
+      font-size: 14px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    #custom-module-section .file-hint { font-size: 12px; color: var(--lumen-mute); margin-top: 8px; }
 
-    /* Input */
-    .input-group { margin-bottom: 24px; }
-
+    /* Inputs */
+    .input-group { margin-bottom: var(--lumen-s-5); }
     .input-group label {
       display: block;
       font-size: 13px;
-      color: #9ca3af;
+      color: var(--lumen-ink-soft);
       margin-bottom: 8px;
+      font-weight: 500;
     }
-
-    .input-group input {
+    .l-input {
       width: 100%;
-      padding: 12px 16px;
-      background: #111827;
-      border: 2px solid #1e293b;
-      border-radius: 10px;
-      color: white;
-      font-family: monospace;
+      padding: 14px 16px;
+      background: var(--lumen-surface);
+      border: 1px solid var(--lumen-line);
+      border-radius: var(--lumen-r-sm);
+      color: var(--lumen-ink);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: 14px;
       outline: none;
-      transition: border-color 0.2s;
+      transition: border-color 180ms ease, box-shadow 180ms ease;
     }
-
-    .input-group input:focus { border-color: #3b82f6; }
-
-    .input-group input::placeholder { color: #4b5563; }
-
-    .input-hint {
-      font-size: 12px;
-      color: #6b7280;
-      margin-top: 8px;
+    .l-input:focus {
+      border-color: var(--lumen-blue);
+      box-shadow: 0 0 0 4px var(--lumen-lavender);
     }
+    .l-input::placeholder { color: var(--lumen-mute); }
+    .input-hint { font-size: 12px; color: var(--lumen-mute); margin-top: 8px; }
 
     /* Buttons */
     .btn-row {
       display: flex;
       gap: 12px;
       justify-content: flex-end;
+      margin-top: var(--lumen-s-5);
     }
-
-    .btn {
-      padding: 12px 28px;
-      border-radius: 10px;
-      font-family: 'Inter', sans-serif;
+    .l-btn {
+      padding: 12px 26px;
+      border-radius: var(--lumen-r-pill);
+      font-family: var(--lumen-font);
       font-size: 14px;
       font-weight: 500;
       cursor: pointer;
-      border: none;
-      transition: all 0.2s;
+      border: 1px solid transparent;
+      transition: background 180ms ease, transform 120ms ease, box-shadow 180ms ease, border-color 180ms ease;
     }
-
     .btn-primary {
-      background: #3b82f6;
-      color: white;
+      background: var(--lumen-ink);
+      color: var(--lumen-paper);
     }
-
-    .btn-primary:hover {
-      background: #2563eb;
-      box-shadow: 0 4px 20px rgba(59,130,246,0.3);
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: var(--lumen-shadow);
     }
-
     .btn-primary:disabled {
-      background: #1e3a5f;
-      color: #6b7280;
+      background: var(--lumen-paper-2);
+      color: var(--lumen-mute);
       cursor: not-allowed;
-      box-shadow: none;
     }
-
     .btn-ghost {
       background: transparent;
-      color: #9ca3af;
-      border: 1px solid #1e293b;
+      color: var(--lumen-ink-soft);
+      border-color: var(--lumen-line);
     }
-
-    .btn-ghost:hover { border-color: #3b82f6; color: white; }
+    .btn-ghost:hover { border-color: var(--lumen-ink-soft); color: var(--lumen-ink); }
 
     /* Progress dots */
     .progress {
       display: flex;
       justify-content: center;
       gap: 8px;
-      margin-bottom: 32px;
+      margin-bottom: var(--lumen-s-6);
     }
-
     .progress-dot {
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background: #1e293b;
+      background: var(--lumen-line);
       transition: all 0.3s;
     }
-
-    .progress-dot.active { background: #3b82f6; width: 24px; border-radius: 4px; }
-    .progress-dot.done { background: #10b981; }
+    .progress-dot.active { background: var(--lumen-blue); width: 26px; border-radius: 4px; }
+    .progress-dot.done { background: var(--lumen-success); }
 
     /* Error */
     .error-msg {
-      background: rgba(239,68,68,0.1);
-      border: 1px solid rgba(239,68,68,0.3);
-      color: #f87171;
-      padding: 10px 16px;
-      border-radius: 8px;
+      background: rgba(217,76,76,0.08);
+      border: 1px solid rgba(217,76,76,0.25);
+      color: var(--lumen-danger);
+      padding: 10px 14px;
+      border-radius: var(--lumen-r-sm);
       font-size: 13px;
-      margin-bottom: 16px;
+      margin-bottom: var(--lumen-s-4);
       display: none;
     }
   </style>
 </head>
 <body>
   <div class="setup-container">
-    <!-- Logo -->
     <div class="logo">
-      <svg viewBox="0 0 220 130" width="80" height="48">
-        <!-- Eye outline (faceted, matches awakening) -->
-        <path d="M10,65 Q45,15 110,10 Q175,15 210,65 Q175,115 110,120 Q45,115 10,65 Z"
-              fill="none" stroke="rgba(203,213,225,0.6)" stroke-width="2" stroke-linecap="round"/>
-        <!-- Inner facets -->
-        <path d="M35,65 Q65,30 110,24 Q155,30 185,65"
-              fill="none" stroke="rgba(71,85,105,0.4)" stroke-width="1"/>
-        <path d="M35,65 Q65,100 110,106 Q155,100 185,65"
-              fill="none" stroke="rgba(71,85,105,0.4)" stroke-width="1"/>
-        <!-- Iris glow -->
-        <circle cx="110" cy="65" r="30" fill="#3b82f6" opacity="0.12" filter="blur(6px)"/>
-        <!-- Iris -->
-        <circle cx="110" cy="65" r="30" fill="none" stroke="#3b82f6" stroke-width="2" opacity="0.5"/>
-        <circle cx="110" cy="65" r="22" fill="#3b82f6" opacity="0.25"/>
-        <!-- Pupil -->
-        <circle cx="110" cy="65" r="10" fill="#050a18"/>
-        <!-- Light reflections -->
-        <circle cx="100" cy="56" r="4" fill="white" opacity="0.8"/>
-        <circle cx="118" cy="52" r="2" fill="white" opacity="0.6"/>
-        <!-- Connection nodes -->
-        <circle cx="60" cy="32" r="2.5" fill="#3b82f6" opacity="0.7"/>
-        <circle cx="160" cy="32" r="2.5" fill="#3b82f6" opacity="0.7"/>
-        <circle cx="110" cy="10" r="2.5" fill="#3b82f6" opacity="0.7"/>
-        <circle cx="110" cy="120" r="2.5" fill="#3b82f6" opacity="0.7"/>
-      </svg>
-      <h1>Welcome to <span>Lumen</span></h1>
-      <p>Get your local agent ready in 4 quick steps.</p>
+      <img src="/static/logo.png" alt="Lumen" />
+      <h1>Bienvenido a <span>Lumen</span></h1>
+      <p>Tu asistente local en 4 pasos rápidos.</p>
     </div>
 
-    <!-- Progress -->
     <div class="progress">
       <div class="progress-dot active" id="dot-0"></div>
       <div class="progress-dot" id="dot-1"></div>
@@ -358,65 +260,55 @@
       <div class="progress-dot" id="dot-3"></div>
     </div>
 
-    <!-- Step 1: Entry path — 3 paths -->
+    <!-- Step 1: Entry path -->
     <div class="step active" id="step-0">
-      <div class="step-label">Step 1 of 4</div>
-      <div class="step-title">How would you like to start?</div>
+      <div class="step-label">Paso 1 de 4</div>
+      <div class="step-title">¿Por dónde empezamos?</div>
 
       <div class="entry-grid">
-        <!-- Path 1: Quick start -->
-        <div class="entry-card" data-entry-path="rapido" onclick="selectEntryPath(this)">
+        <div class="l-card" data-entry-path="rapido" onclick="selectEntryPath(this)">
           <div class="entry-name">Empezá rápido</div>
-          <div class="entry-description">Personalidad default + modelos gratuitos de OpenRouter. Listo en 30 segundos.</div>
-          <div class="entry-tag" style="margin-top:8px;display:inline-block;font-size:11px;padding:2px 10px;border-radius:6px;background:rgba(16,185,129,0.15);color:#10b981;">Recommended</div>
+          <div class="entry-description">Personalidad por defecto + modelos gratuitos de OpenRouter. Listo en 30 segundos.</div>
+          <span class="entry-tag tag-recommended">Recomendado</span>
         </div>
-        <!-- Path 2: Choose personality -->
-        <div class="entry-card" data-entry-path="elegir_personality" onclick="selectEntryPath(this)">
+        <div class="l-card" data-entry-path="elegir_personality" onclick="selectEntryPath(this)">
           <div class="entry-name">Elegí personalidad</div>
-          <div class="entry-description">Explorá el catálogo de personalities y elegí la que mejor se adapte a tu caso.</div>
+          <div class="entry-description">Explorá el catálogo y elegí la que mejor se adapte a vos.</div>
         </div>
-        <!-- Path 3: Bring your module -->
-        <div class="entry-card" data-entry-path="custom_module" onclick="selectEntryPath(this)">
+        <div class="l-card" data-entry-path="custom_module" onclick="selectEntryPath(this)">
           <div class="entry-name">Traé tu módulo</div>
-          <div class="entry-description">Subí un module.yaml personalizado para configurar Lumen a tu medida.</div>
+          <div class="entry-description">Subí un módulo propio (.yaml o .zip) para configurar Lumen a tu medida.</div>
         </div>
       </div>
 
-      <!-- Personality selector (shown only for path 2) -->
       <div class="personality-section" id="personality-section">
-        <div class="personality-title" id="personality-title">Elige una personalidad</div>
+        <div class="personality-title" id="personality-title">Elegí una personalidad</div>
         <div class="personality-grid" id="personality-grid"></div>
       </div>
 
-      <!-- Module upload (shown only for path 3) -->
       <div id="custom-module-section" style="display:none;">
-        <div style="font-size:13px;color:#9ca3af;margin-bottom:12px;">Subí tu archivo module.yaml</div>
-        <div style="position:relative;">
-          <input type="file" id="custom-module-input" accept=".yaml,.yml,.zip"
-                 style="width:100%;padding:12px 16px;background:#111827;border:2px solid #1e293b;border-radius:10px;color:white;font-size:14px;cursor:pointer;" />
-        </div>
-        <div style="font-size:12px;color:#6b7280;margin-top:8px;">
-          Acepta .yaml o .zip con tu módulo x-lumen custom.
-        </div>
+        <div class="hint">Subí tu archivo <code>module.yaml</code> o un <code>.zip</code></div>
+        <input type="file" id="custom-module-input" accept=".yaml,.yml,.zip" />
+        <div class="file-hint">Acepta .yaml o .zip con tu módulo personalizado.</div>
       </div>
 
       <div class="btn-row">
-        <button class="btn btn-primary" id="btn-next-0" disabled onclick="nextStep()">Continue</button>
+        <button class="l-btn btn-primary" id="btn-next-0" disabled onclick="nextStep()">Continuar</button>
       </div>
     </div>
 
     <!-- Step 2: Language -->
     <div class="step" id="step-1">
-      <div class="step-label">Step 2 of 4</div>
-      <div class="step-title">Choose your language</div>
+      <div class="step-label">Paso 2 de 4</div>
+      <div class="step-title">Elegí tu idioma</div>
 
       <div class="lang-grid">
-        <div class="lang-card" data-lang="en" onclick="selectLang(this)">
+        <div class="l-card lang-card" data-lang="en" onclick="selectLang(this)">
           <div class="flag">EN</div>
           <div class="name">English</div>
           <div class="native">English</div>
         </div>
-        <div class="lang-card" data-lang="es" onclick="selectLang(this)">
+        <div class="l-card lang-card" data-lang="es" onclick="selectLang(this)">
           <div class="flag">ES</div>
           <div class="name">Spanish</div>
           <div class="native">Español</div>
@@ -424,101 +316,101 @@
       </div>
 
       <div class="btn-row">
-        <button class="btn btn-ghost" onclick="prevStep()">Back</button>
-        <button class="btn btn-primary" id="btn-next-1" disabled onclick="nextStep()">Continue</button>
+        <button class="l-btn btn-ghost" onclick="prevStep()">Atrás</button>
+        <button class="l-btn btn-primary" id="btn-next-1" disabled onclick="nextStep()">Continuar</button>
       </div>
     </div>
 
     <!-- Step 3: Model -->
     <div class="step" id="step-2">
-      <div class="step-label">Step 3 of 4</div>
-      <div class="step-title">Choose your provider</div>
+      <div class="step-label">Paso 3 de 4</div>
+      <div class="step-title">Elegí tu proveedor</div>
 
       <div class="provider-grid">
-        <div class="provider-card" data-provider="deepseek" data-model="deepseek/deepseek-chat" data-env="DEEPSEEK_API_KEY" data-key-label="DeepSeek API key" onclick="selectProvider(this)">
+        <div class="l-card" data-provider="deepseek" data-model="deepseek/deepseek-chat" data-env="DEEPSEEK_API_KEY" data-key-label="DeepSeek API key" onclick="selectProvider(this)">
           <div class="provider-name">DeepSeek</div>
           <div class="provider-model">deepseek-chat</div>
-          <span class="provider-tag tag-recommended">Recommended</span>
+          <span class="provider-tag tag-recommended">Recomendado</span>
         </div>
-        <div class="provider-card" data-provider="openrouter" data-model="" data-env="OPENROUTER_API_KEY" data-key-label="OpenRouter connection" onclick="selectProvider(this)">
+        <div class="l-card" data-provider="openrouter" data-model="" data-env="OPENROUTER_API_KEY" data-key-label="OpenRouter connection" onclick="selectProvider(this)">
           <div class="provider-name">OpenRouter</div>
-          <div class="provider-model">Browser sign-in + curated models</div>
-          <span class="provider-tag tag-recommended">Authorize in browser</span>
+          <div class="provider-model">Sign-in en navegador + modelos curados</div>
+          <span class="provider-tag tag-recommended">Autorizar en navegador</span>
         </div>
-        <div class="provider-card" data-provider="openai" data-model="gpt-4o-mini" data-env="OPENAI_API_KEY" data-key-label="OpenAI API key" onclick="selectProvider(this)">
+        <div class="l-card" data-provider="openai" data-model="gpt-4o-mini" data-env="OPENAI_API_KEY" data-key-label="OpenAI API key" onclick="selectProvider(this)">
           <div class="provider-name">OpenAI</div>
           <div class="provider-model">gpt-4o-mini</div>
           <span class="provider-tag tag-premium">Popular</span>
         </div>
-        <div class="provider-card" data-provider="anthropic" data-model="claude-sonnet-4-20250514" data-env="ANTHROPIC_API_KEY" data-key-label="Anthropic API key" onclick="selectProvider(this)">
+        <div class="l-card" data-provider="anthropic" data-model="claude-sonnet-4-20250514" data-env="ANTHROPIC_API_KEY" data-key-label="Anthropic API key" onclick="selectProvider(this)">
           <div class="provider-name">Anthropic</div>
           <div class="provider-model">claude-sonnet-4</div>
           <span class="provider-tag tag-premium">Premium</span>
         </div>
-        <div class="provider-card" data-provider="ollama" data-model="ollama/llama3" data-env="" data-key-label="" onclick="selectProvider(this)">
+        <div class="l-card" data-provider="ollama" data-model="ollama/llama3" data-env="" data-key-label="" onclick="selectProvider(this)">
           <div class="provider-name">Ollama</div>
           <div class="provider-model">llama3 (local)</div>
-          <span class="provider-tag tag-local">No API key</span>
+          <span class="provider-tag tag-local">Sin API key</span>
         </div>
       </div>
 
       <div class="btn-row">
-        <button class="btn btn-ghost" onclick="prevStep()">Back</button>
-        <button class="btn btn-primary" id="btn-next-2" disabled onclick="nextStep()">Continue</button>
+        <button class="l-btn btn-ghost" onclick="prevStep()">Atrás</button>
+        <button class="l-btn btn-primary" id="btn-next-2" disabled onclick="nextStep()">Continuar</button>
       </div>
     </div>
 
     <!-- Step 4: API Key -->
     <div class="step" id="step-3">
-      <div class="step-label">Step 4 of 4</div>
-      <div class="step-title" id="key-title">Add your API key</div>
+      <div class="step-label">Paso 4 de 4</div>
+      <div class="step-title" id="key-title">Agregá tu API key</div>
 
-      <div id="openrouter-model-section" style="display:none; margin-bottom:24px;">
-        <div class="input-group" style="margin-bottom:12px;">
-          <label>Choose an OpenRouter model</label>
+      <div id="openrouter-model-section" style="display:none; margin-bottom: var(--lumen-s-5);">
+        <div class="input-group" style="margin-bottom: 12px;">
+          <label>Elegí un modelo de OpenRouter</label>
         </div>
-        <div class="provider-grid" style="margin-bottom:16px;">
-          <div class="provider-card" data-openrouter-model="meta-llama/llama-3.3-70b-instruct:free" onclick="selectOpenRouterModel(this)">
+        <div class="provider-grid" style="margin-bottom: 16px;">
+          <div class="l-card" data-openrouter-model="meta-llama/llama-3.3-70b-instruct:free" onclick="selectOpenRouterModel(this)">
             <div class="provider-name">Llama 3.3 70B</div>
             <div class="provider-model">meta-llama/llama-3.3-70b-instruct:free</div>
           </div>
-          <div class="provider-card" data-openrouter-model="deepseek/deepseek-chat:free" onclick="selectOpenRouterModel(this)">
+          <div class="l-card" data-openrouter-model="deepseek/deepseek-chat:free" onclick="selectOpenRouterModel(this)">
             <div class="provider-name">DeepSeek Chat</div>
             <div class="provider-model">deepseek/deepseek-chat:free</div>
           </div>
-          <div class="provider-card" data-openrouter-model="mistralai/mistral-7b-instruct:free" onclick="selectOpenRouterModel(this)">
+          <div class="l-card" data-openrouter-model="mistralai/mistral-7b-instruct:free" onclick="selectOpenRouterModel(this)">
             <div class="provider-name">Mistral 7B Instruct</div>
             <div class="provider-model">mistralai/mistral-7b-instruct:free</div>
           </div>
-          <div class="provider-card" data-openrouter-model="google/gemma-3-27b-it:free" onclick="selectOpenRouterModel(this)">
+          <div class="l-card" data-openrouter-model="google/gemma-3-27b-it:free" onclick="selectOpenRouterModel(this)">
             <div class="provider-name">Gemma 3 27B IT</div>
             <div class="provider-model">google/gemma-3-27b-it:free</div>
           </div>
         </div>
-        <p style="color:#9ca3af; font-size:14px; line-height:1.5;">
-          We'll open OpenRouter in your browser so you can approve this local setup. No manual key paste is needed here.
+        <p style="color: var(--lumen-ink-soft); font-size: 14px; line-height: 1.55;">
+          Vamos a abrir OpenRouter en tu navegador para que aprueben este setup local. No hace falta pegar la clave acá.
         </p>
       </div>
 
       <div id="key-section">
         <div class="input-group">
           <label id="key-label">API Key</label>
-          <input type="password" id="api-key-input" placeholder="sk-..." autocomplete="off" />
-          <div class="input-hint" id="key-hint">Your key is stored locally in ~/.lumen/config.yaml</div>
+          <input type="password" id="api-key-input" class="l-input" placeholder="sk-..." autocomplete="off" />
+          <div class="input-hint" id="key-hint">Tu key se guarda local en <code>~/.lumen/config.yaml</code></div>
         </div>
       </div>
 
       <div id="no-key-section" style="display:none;">
-        <p style="color:#9ca3af; font-size:14px; margin-bottom:24px;">
-          Ollama runs locally — no API key needed. Make sure Ollama is running on your machine.
+        <p style="color: var(--lumen-ink-soft); font-size: 14px; margin-bottom: var(--lumen-s-5); line-height: 1.55;">
+          Ollama corre local — no hace falta API key. Asegurate de tener Ollama corriendo en tu máquina.
         </p>
       </div>
 
       <div class="error-msg" id="error-msg"></div>
 
       <div class="btn-row">
-        <button class="btn btn-ghost" onclick="prevStep()">Back</button>
-        <button class="btn btn-primary" id="btn-finish" onclick="finishSetup()">Start Lumen</button>
+        <button class="l-btn btn-ghost" onclick="prevStep()">Atrás</button>
+        <button class="l-btn btn-primary" id="btn-finish" onclick="finishSetup()">Iniciar Lumen</button>
       </div>
     </div>
   </div>
@@ -531,17 +423,17 @@
 
     function getOAuthErrorMessage(code) {
       const messages = {
-        canceled_auth: 'OpenRouter authorization was canceled. You can try again when you\'re ready.',
-        invalid_or_expired_state: 'That OpenRouter sign-in link expired or is no longer valid. Please start again.',
-        missing_code_or_state: 'OpenRouter did not return the required sign-in details. Please try again.',
-        exchange_failed: 'Lumen could not finish the OpenRouter connection. Check your network and try again.',
-        oauth_failed: 'OpenRouter connection failed. Please try again.',
+        canceled_auth: 'Se canceló la autorización de OpenRouter. Probá de nuevo cuando estés listo.',
+        invalid_or_expired_state: 'El link de OpenRouter expiró o ya no es válido. Empezá de nuevo.',
+        missing_code_or_state: 'OpenRouter no devolvió los datos necesarios. Probá otra vez.',
+        exchange_failed: 'Lumen no pudo terminar la conexión con OpenRouter. Revisá tu red y probá de nuevo.',
+        oauth_failed: 'La conexión con OpenRouter falló. Probá de nuevo.',
       };
       return messages[code] || messages.oauth_failed;
     }
 
     async function selectEntryPath(el) {
-      document.querySelectorAll('.entry-card').forEach(c => c.classList.remove('selected'));
+      document.querySelectorAll('[data-entry-path]').forEach(c => c.classList.remove('selected'));
       el.classList.add('selected');
       config.entry_path = el.dataset.entryPath;
       config.active_personality = '';
@@ -550,10 +442,8 @@
       config.api_key_env = '';
       config.api_key = '';
       config.key_label = '';
-      document.querySelectorAll('.provider-card').forEach(c => c.classList.remove('selected'));
-      document.querySelectorAll('[data-openrouter-model]').forEach(c => c.classList.remove('selected'));
+      document.querySelectorAll('[data-provider], [data-openrouter-model]').forEach(c => c.classList.remove('selected'));
 
-      // Show/hide sections based on chosen path
       const personalitySection = document.getElementById('personality-section');
       const customModuleSection = document.getElementById('custom-module-section');
 
@@ -571,7 +461,6 @@
         if (openrouterCard) selectProvider(openrouterCard);
         if (defaultModelCard) selectOpenRouterModel(defaultModelCard);
       }
-      // "rapido" path — no extra section needed, go straight to next steps
 
       document.getElementById('btn-next-0').disabled = false;
     }
@@ -594,8 +483,8 @@
       }
 
       section.style.display = 'block';
-      title.textContent = 'Elige una personalidad';
-      grid.innerHTML = '<div class="personality-empty">Loading personalities...</div>';
+      title.textContent = 'Elegí una personalidad';
+      grid.innerHTML = '<div class="personality-empty">Cargando personalidades...</div>';
 
       try {
         const res = await fetch(`/api/setup/personalities?entry_path=${encodeURIComponent(entryPath)}`);
@@ -603,35 +492,33 @@
         const modules = Array.isArray(data.modules) ? data.modules : [];
 
         if (!modules.length) {
-          grid.innerHTML = '<div class="personality-empty">No personalities available yet for this path.</div>';
+          grid.innerHTML = '<div class="personality-empty">No hay personalidades disponibles para este camino todavía.</div>';
           return;
         }
 
         grid.innerHTML = modules.map((mod) => `
-          <div class="personality-card" data-module-name="${mod.name}" onclick="selectPersonality(this)">
+          <div class="l-card personality-card" data-module-name="${mod.name}" onclick="selectPersonality(this)">
             <div class="personality-meta">
               <div class="personality-name">${mod.display_name || mod.name}</div>
-              <div class="personality-status">${mod.installed ? 'installed' : 'catalog'}</div>
+              <div class="personality-status">${mod.installed ? 'instalada' : 'catálogo'}</div>
             </div>
             <div class="personality-description">${mod.description || ''}</div>
           </div>
         `).join('');
       } catch (e) {
-        grid.innerHTML = '<div class="personality-empty">Could not load personalities right now.</div>';
+        grid.innerHTML = '<div class="personality-empty">No pudimos cargar las personalidades ahora.</div>';
       }
     }
 
-    // --- Language selection ---
     function selectLang(el) {
-      document.querySelectorAll('.lang-card').forEach(c => c.classList.remove('selected'));
+      document.querySelectorAll('[data-lang]').forEach(c => c.classList.remove('selected'));
       el.classList.add('selected');
       config.language = el.dataset.lang;
       document.getElementById('btn-next-1').disabled = false;
     }
 
-    // --- Provider selection ---
     function selectProvider(el) {
-      document.querySelectorAll('.provider-card').forEach(c => c.classList.remove('selected'));
+      document.querySelectorAll('[data-provider]').forEach(c => c.classList.remove('selected'));
       el.classList.add('selected');
       config.provider = el.dataset.provider || '';
       config.model = el.dataset.model;
@@ -646,7 +533,6 @@
       config.model = el.dataset.openrouterModel;
     }
 
-    // --- Step navigation ---
     function showStep(n) {
       document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
       document.getElementById(`step-${n}`).classList.add('active');
@@ -657,7 +543,6 @@
         if (i === n) d.classList.add('active');
       });
 
-      // Update step 3 based on provider
       if (n === 3) {
         const isOpenRouter = config.provider === 'openrouter';
         document.getElementById('openrouter-model-section').style.display = isOpenRouter ? 'block' : 'none';
@@ -666,15 +551,15 @@
           document.getElementById('openrouter-model-section').style.display = config.entry_path === 'rapido' ? 'none' : 'block';
           document.getElementById('key-section').style.display = 'none';
           document.getElementById('no-key-section').style.display = 'none';
-          document.getElementById('key-title').textContent = 'Authorize OpenRouter';
+          document.getElementById('key-title').textContent = 'Autorizar OpenRouter';
         } else if (!config.api_key_env) {
           document.getElementById('key-section').style.display = 'none';
           document.getElementById('no-key-section').style.display = 'block';
-          document.getElementById('key-title').textContent = 'Almost there';
+          document.getElementById('key-title').textContent = 'Casi listo';
         } else {
           document.getElementById('key-section').style.display = 'block';
           document.getElementById('no-key-section').style.display = 'none';
-          document.getElementById('key-title').textContent = 'Add your API key';
+          document.getElementById('key-title').textContent = 'Agregá tu API key';
           document.getElementById('key-label').textContent = config.key_label || 'API key';
           document.getElementById('api-key-input').placeholder =
             config.api_key_env.includes('DEEPSEEK') ? 'sk-...' :
@@ -703,17 +588,13 @@
       showStep(currentStep - 1);
     }
 
-    // --- Custom module upload ---
     async function uploadCustomModule() {
       const input = document.getElementById('custom-module-input');
       const file = input.files[0];
       if (!file) return null;
       try {
         const data = await file.arrayBuffer();
-        const res = await fetch('/api/modules/upload', {
-          method: 'POST',
-          body: data,
-        });
+        const res = await fetch('/api/modules/upload', { method: 'POST', body: data });
         const result = await res.json();
         if (result.status === 'installed' && result.name) {
           config.active_personality = result.name;
@@ -725,7 +606,6 @@
       }
     }
 
-    // --- Finish setup ---
     async function finishSetup() {
       const btn = document.getElementById('btn-finish');
       const errEl = document.getElementById('error-msg');
@@ -734,7 +614,7 @@
       if (config.entry_path === 'custom_module' && !config.active_personality) {
         const uploadResult = await uploadCustomModule();
         if (!uploadResult) {
-          errEl.textContent = 'Please upload a valid custom module before continuing.';
+          errEl.textContent = 'Subí un módulo válido antes de continuar.';
           errEl.style.display = 'block';
           return;
         }
@@ -742,13 +622,12 @@
 
       if (config.provider === 'openrouter') {
         if (!config.model) {
-          errEl.textContent = 'Please choose an OpenRouter model.';
+          errEl.textContent = 'Elegí un modelo de OpenRouter.';
           errEl.style.display = 'block';
           return;
         }
-
         btn.disabled = true;
-        btn.textContent = 'Connecting to OpenRouter...';
+        btn.textContent = 'Conectando con OpenRouter...';
         const params = new URLSearchParams({
           entry_path: config.entry_path,
           active_personality: config.active_personality || '',
@@ -760,18 +639,17 @@
         return;
       }
 
-      // Get API key if needed
       if (config.api_key_env) {
         config.api_key = document.getElementById('api-key-input').value.trim();
         if (!config.api_key) {
-          errEl.textContent = 'Please enter your API key.';
+          errEl.textContent = 'Ingresá tu API key.';
           errEl.style.display = 'block';
           return;
         }
       }
 
       btn.disabled = true;
-      btn.textContent = 'Starting Lumen...';
+      btn.textContent = 'Iniciando Lumen...';
 
       try {
         const res = await fetch('/api/setup', {
@@ -791,23 +669,21 @@
         const data = await res.json();
 
         if (data.status === 'ok') {
-          // Redirect to awakening
           window.location.href = '/';
         } else {
-          errEl.textContent = data.error || 'Setup failed. Please try again.';
+          errEl.textContent = data.error || 'El setup falló. Probá de nuevo.';
           errEl.style.display = 'block';
           btn.disabled = false;
-          btn.textContent = 'Start Lumen';
+          btn.textContent = 'Iniciar Lumen';
         }
       } catch (e) {
-        errEl.textContent = 'Connection error. Is the server running?';
+        errEl.textContent = 'Error de conexión. ¿El servidor está corriendo?';
         errEl.style.display = 'block';
         btn.disabled = false;
-        btn.textContent = 'Start Lumen';
+        btn.textContent = 'Iniciar Lumen';
       }
     }
 
-    // Allow Enter key on API key input
     document.getElementById('api-key-input').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') finishSetup();
     });
