@@ -208,6 +208,13 @@
         <button type="button" onclick="switchMarketplaceTab('mcps')" id="tab-mcps" class="marketplace-tab px-4 py-2 rounded-lg text-sm font-medium bg-white/5 text-gray-300 border border-neo-border">MCPs</button>
       </div>
 
+      <!-- Personality-first filter bar -->
+      <div id="marketplace-filter-bar" class="flex flex-wrap gap-2 mb-4">
+        <button type="button" onclick="setMarketplaceFilter('all')" id="filter-all" class="marketplace-filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-neo-accent/10 text-neo-accent border border-neo-accent/30">All</button>
+        <button type="button" onclick="setMarketplaceFilter('personality')" id="filter-personality" class="marketplace-filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 text-gray-400 border border-neo-border">Personality</button>
+        <button type="button" onclick="setMarketplaceFilter('tools')" id="filter-tools" class="marketplace-filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 text-gray-400 border border-neo-border">Tools &amp; Utilities</button>
+      </div>
+
       <div class="bg-neo-card rounded-xl border border-neo-border p-4 mb-6">
         <div class="flex flex-wrap items-center gap-3 text-xs text-gray-400">
           <span class="font-semibold uppercase tracking-wider text-gray-500">Cerebelo</span>
@@ -415,6 +422,26 @@
     };
     let marketplaceState = null;
     let currentMarketplaceTab = 'kits_lumen';
+    let currentMarketplaceFilter = 'all';
+
+    function isPersonalityModule(item) {
+      const tags = item.tags || [];
+      return tags.includes('x-lumen') && tags.includes('personality');
+    }
+
+    function setMarketplaceFilter(filter) {
+      currentMarketplaceFilter = filter;
+      document.querySelectorAll('.marketplace-filter-btn').forEach(btn => {
+        btn.classList.remove('bg-neo-accent/10', 'text-neo-accent', 'border-neo-accent/30');
+        btn.classList.add('bg-white/5', 'text-gray-400', 'border-neo-border');
+      });
+      const active = document.getElementById(`filter-${filter}`);
+      if (active) {
+        active.classList.remove('bg-white/5', 'text-gray-400', 'border-neo-border');
+        active.classList.add('bg-neo-accent/10', 'text-neo-accent', 'border-neo-accent/30');
+      }
+      renderMarketplaceTab();
+    }
 
     function switchMarketplaceTab(tab) {
       currentMarketplaceTab = tab;
@@ -473,11 +500,18 @@
     function renderKitCard(item) {
       const reasons = item.compatibility?.reasons || [];
       const warnings = item.compatibility?.warnings || [];
+      const personality = isPersonalityModule(item);
+      const personalityBadge = personality
+        ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-purple-500/15 text-purple-300 border border-purple-500/25">Personality</span>'
+        : '';
       return `
-        <div class="bg-neo-card rounded-xl border border-neo-border p-5">
+        <div class="bg-neo-card rounded-xl border ${personality ? 'border-purple-500/30' : 'border-neo-border'} p-5">
           <div class="flex items-start justify-between gap-3 mb-3">
             <div>
-              <h4 class="text-white font-semibold">${escapeHtml(item.display_name || item.name)}</h4>
+              <div class="flex items-center gap-2">
+                <h4 class="text-white font-semibold">${escapeHtml(item.display_name || item.name)}</h4>
+                ${personalityBadge}
+              </div>
               <p class="text-xs text-gray-500 mt-1">v${escapeHtml(item.version || '0.0.0')} &bull; ${escapeHtml(item.min_capability || 'tier-1')} &bull; ${escapeHtml(item.price || 'free')}</p>
             </div>
             <div class="flex items-center gap-2">${renderCompatBadge(item)}
@@ -503,6 +537,22 @@
       container.innerHTML = items.map(renderer).join('');
     }
 
+    function filterAndSortItems(items) {
+      let filtered = items || [];
+      if (currentMarketplaceFilter === 'personality') {
+        filtered = filtered.filter(isPersonalityModule);
+      } else if (currentMarketplaceFilter === 'tools') {
+        filtered = filtered.filter(item => !isPersonalityModule(item));
+      }
+      // Sort: personalities first
+      filtered.sort((a, b) => {
+        const ap = isPersonalityModule(a) ? 0 : 1;
+        const bp = isPersonalityModule(b) ? 0 : 1;
+        return ap - bp;
+      });
+      return filtered;
+    }
+
     function renderMarketplaceTab() {
       if (!marketplaceState) return;
       const section = marketplaceState[currentMarketplaceTab];
@@ -514,7 +564,11 @@
       const availableEl = document.getElementById('marketplace-available');
       const noteEl = document.getElementById('marketplace-note');
       const uploadLabel = document.getElementById('marketplace-upload-label');
+      const filterBar = document.getElementById('marketplace-filter-bar');
       const isKits = currentMarketplaceTab === 'kits_lumen';
+
+      // Show filter bar only on kits_lumen tab
+      filterBar.style.display = isKits ? 'flex' : 'none';
 
       installedTitle.textContent = section.installed_label || 'Installed';
       availableTitle.textContent = section.available_label || 'Available';
@@ -523,17 +577,19 @@
         : 'Modules and personalities from the local catalog can be installed or removed in this batch.';
       uploadLabel.classList.toggle('hidden', !isKits);
 
+      const renderer = isKits ? renderKitCard : item => renderReadOnlyCard(item, 'No description available.');
+
       renderMarketplaceList(
         installedEl,
-        section.installed || [],
-        isKits ? renderKitCard : item => renderReadOnlyCard(item, 'No description available.'),
+        isKits ? filterAndSortItems(section.installed) : (section.installed || []),
+        renderer,
         isKits ? 'No modules or personalities are installed yet.' : 'Nothing from this tab is currently in the Body.',
         false,
       );
       renderMarketplaceList(
         availableEl,
-        section.available || [],
-        isKits ? renderKitCard : item => renderReadOnlyCard(item, 'No description available.'),
+        isKits ? filterAndSortItems(section.available) : (section.available || []),
+        renderer,
         isKits ? 'No more modules or personalities are available right now.' : 'No additional entries were discovered.',
         true,
       );
