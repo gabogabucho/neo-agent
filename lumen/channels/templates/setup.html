@@ -358,29 +358,46 @@
       <div class="progress-dot" id="dot-3"></div>
     </div>
 
-    <!-- Step 1: Entry path -->
+    <!-- Step 1: Entry path — 3 paths -->
     <div class="step active" id="step-0">
       <div class="step-label">Step 1 of 4</div>
       <div class="step-title">How would you like to start?</div>
 
       <div class="entry-grid">
-        <div class="entry-card" data-entry-path="uso_personal" onclick="selectEntryPath(this)">
-          <div class="entry-name">Uso personal</div>
-          <div class="entry-description">Quiero usar Lumen para mi propio trabajo y organización.</div>
+        <!-- Path 1: Quick start -->
+        <div class="entry-card" data-entry-path="rapido" onclick="selectEntryPath(this)">
+          <div class="entry-name">Empezá rápido</div>
+          <div class="entry-description">Personalidad default + modelos gratuitos de OpenRouter. Listo en 30 segundos.</div>
+          <div class="entry-tag" style="margin-top:8px;display:inline-block;font-size:11px;padding:2px 10px;border-radius:6px;background:rgba(16,185,129,0.15);color:#10b981;">Recommended</div>
         </div>
-        <div class="entry-card" data-entry-path="negocio" onclick="selectEntryPath(this)">
-          <div class="entry-name">Negocio</div>
-          <div class="entry-description">Lo estoy evaluando para un equipo, clientes o procesos del negocio.</div>
+        <!-- Path 2: Choose personality -->
+        <div class="entry-card" data-entry-path="elegir_personality" onclick="selectEntryPath(this)">
+          <div class="entry-name">Elegí personalidad</div>
+          <div class="entry-description">Explorá el catálogo de personalities y elegí la que mejor se adapte a tu caso.</div>
         </div>
-        <div class="entry-card" data-entry-path="desde_cero" onclick="selectEntryPath(this)">
-          <div class="entry-name">Desde cero</div>
-          <div class="entry-description">Soy nuevo en este tipo de agente y quiero empezar desde lo básico.</div>
+        <!-- Path 3: Bring your module -->
+        <div class="entry-card" data-entry-path="custom_module" onclick="selectEntryPath(this)">
+          <div class="entry-name">Traé tu módulo</div>
+          <div class="entry-description">Subí un module.yaml personalizado para configurar Lumen a tu medida.</div>
         </div>
       </div>
 
+      <!-- Personality selector (shown only for path 2) -->
       <div class="personality-section" id="personality-section">
-        <div class="personality-title" id="personality-title">Elige una personalidad opcional</div>
+        <div class="personality-title" id="personality-title">Elige una personalidad</div>
         <div class="personality-grid" id="personality-grid"></div>
+      </div>
+
+      <!-- Module upload (shown only for path 3) -->
+      <div id="custom-module-section" style="display:none;">
+        <div style="font-size:13px;color:#9ca3af;margin-bottom:12px;">Subí tu archivo module.yaml</div>
+        <div style="position:relative;">
+          <input type="file" id="custom-module-input" accept=".yaml,.yml,.zip"
+                 style="width:100%;padding:12px 16px;background:#111827;border:2px solid #1e293b;border-radius:10px;color:white;font-size:14px;cursor:pointer;" />
+        </div>
+        <div style="font-size:12px;color:#6b7280;margin-top:8px;">
+          Acepta .yaml o .zip con tu módulo x-lumen custom.
+        </div>
       </div>
 
       <div class="btn-row">
@@ -508,6 +525,8 @@
 
   <script>
     let currentStep = 0;
+    const QUICK_DEFAULT_PERSONALITY = 'x-lumen-personal';
+    const QUICK_DEFAULT_MODEL = 'deepseek/deepseek-chat:free';
     let config = { entry_path: '', active_personality: '', language: '', provider: '', model: '', api_key_env: '', api_key: '', key_label: '' };
 
     function getOAuthErrorMessage(code) {
@@ -526,8 +545,35 @@
       el.classList.add('selected');
       config.entry_path = el.dataset.entryPath;
       config.active_personality = '';
+      config.provider = '';
+      config.model = '';
+      config.api_key_env = '';
+      config.api_key = '';
+      config.key_label = '';
+      document.querySelectorAll('.provider-card').forEach(c => c.classList.remove('selected'));
+      document.querySelectorAll('[data-openrouter-model]').forEach(c => c.classList.remove('selected'));
+
+      // Show/hide sections based on chosen path
+      const personalitySection = document.getElementById('personality-section');
+      const customModuleSection = document.getElementById('custom-module-section');
+
+      personalitySection.style.display = 'none';
+      customModuleSection.style.display = 'none';
+
+      if (config.entry_path === 'elegir_personality') {
+        await loadPersonalitiesForEntryPath(config.entry_path);
+      } else if (config.entry_path === 'custom_module') {
+        customModuleSection.style.display = 'block';
+      } else if (config.entry_path === 'rapido') {
+        config.active_personality = QUICK_DEFAULT_PERSONALITY;
+        const openrouterCard = document.querySelector('[data-provider="openrouter"]');
+        const defaultModelCard = document.querySelector(`[data-openrouter-model="${QUICK_DEFAULT_MODEL}"]`);
+        if (openrouterCard) selectProvider(openrouterCard);
+        if (defaultModelCard) selectOpenRouterModel(defaultModelCard);
+      }
+      // "rapido" path — no extra section needed, go straight to next steps
+
       document.getElementById('btn-next-0').disabled = false;
-      await loadPersonalitiesForEntryPath(config.entry_path);
     }
 
     function selectPersonality(el) {
@@ -541,16 +587,14 @@
       const title = document.getElementById('personality-title');
       const grid = document.getElementById('personality-grid');
 
-      if (entryPath === 'desde_cero') {
+      if (entryPath === 'rapido' || entryPath === 'custom_module') {
         section.style.display = 'none';
         grid.innerHTML = '';
         return;
       }
 
       section.style.display = 'block';
-      title.textContent = entryPath === 'negocio'
-        ? 'Elige una personalidad de negocio opcional'
-        : 'Elige una personalidad personal opcional';
+      title.textContent = 'Elige una personalidad';
       grid.innerHTML = '<div class="personality-empty">Loading personalities...</div>';
 
       try {
@@ -619,6 +663,7 @@
         document.getElementById('openrouter-model-section').style.display = isOpenRouter ? 'block' : 'none';
 
         if (isOpenRouter) {
+          document.getElementById('openrouter-model-section').style.display = config.entry_path === 'rapido' ? 'none' : 'block';
           document.getElementById('key-section').style.display = 'none';
           document.getElementById('no-key-section').style.display = 'none';
           document.getElementById('key-title').textContent = 'Authorize OpenRouter';
@@ -642,14 +687,58 @@
       currentStep = n;
     }
 
-    function nextStep() { showStep(currentStep + 1); }
-    function prevStep() { showStep(currentStep - 1); }
+    function nextStep() {
+      if (currentStep === 1 && config.entry_path === 'rapido') {
+        showStep(3);
+        return;
+      }
+      showStep(currentStep + 1);
+    }
+
+    function prevStep() {
+      if (currentStep === 3 && config.entry_path === 'rapido') {
+        showStep(1);
+        return;
+      }
+      showStep(currentStep - 1);
+    }
+
+    // --- Custom module upload ---
+    async function uploadCustomModule() {
+      const input = document.getElementById('custom-module-input');
+      const file = input.files[0];
+      if (!file) return null;
+      try {
+        const data = await file.arrayBuffer();
+        const res = await fetch('/api/modules/upload', {
+          method: 'POST',
+          body: data,
+        });
+        const result = await res.json();
+        if (result.status === 'installed' && result.name) {
+          config.active_personality = result.name;
+          return result;
+        }
+        return null;
+      } catch (e) {
+        return null;
+      }
+    }
 
     // --- Finish setup ---
     async function finishSetup() {
       const btn = document.getElementById('btn-finish');
       const errEl = document.getElementById('error-msg');
       errEl.style.display = 'none';
+
+      if (config.entry_path === 'custom_module' && !config.active_personality) {
+        const uploadResult = await uploadCustomModule();
+        if (!uploadResult) {
+          errEl.textContent = 'Please upload a valid custom module before continuing.';
+          errEl.style.display = 'block';
+          return;
+        }
+      }
 
       if (config.provider === 'openrouter') {
         if (!config.model) {
