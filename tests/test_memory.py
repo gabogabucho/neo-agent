@@ -258,3 +258,87 @@ class TestEdgeCases:
             db_path = Path(tmp) / "nested" / "dir" / "test.db"
             mem = Memory(db_path=db_path)
             assert db_path.parent.exists()
+
+
+# ── asyncio.gather concurrency ───────────────────────────────────────
+
+
+class TestAsyncConcurrency:
+    """Race conditions in Memory under asyncio.gather concurrent access.
+
+    aiosqlite serializes queries on a single connection, so these tests
+    verify that the serialized execution is correct — no data loss,
+    no crashes, consistent reads after concurrent writes.
+    """
+
+    async def test_concurrent_remember_no_data_loss(self, memory):
+        """Multiple simultaneous remember() calls must not lose any rows."""
+        count = 20
+        ids = await asyncio.gather(
+            *[memory.remember(f"concurrent item {i}") for i in range(count)]
+        )
+        assert len(ids) == count
+        assert len(set(ids)) == count  # all unique IDs
+
+        results = await memory.list_by_category("general", limit=count + 5)
+        assert len(results) == count
+
+    async def test_concurrent_remember_same_category(self, memory):
+        """Concurrent writes to the same category must all land."""
+        await asyncio.gather(
+            *[
+                memory.remember(f"task {i}", category="shared")
+                for i in range(10)
+            ]
+        )
+        results = await memory.list_by_category("shared")
+        assert len(results) == 10
+
+    async def test_concurrent_remember_and_recall(self, memory):
+        """Reads during concurrent writes must not crash — eventually consistent."""
+        # Seed one entry first
+        await memory.remember("seed data for recall", category="baseline")
+
+        async def write(i):
+            return await memory.remember(f"write {i}")
+
+        async def read():
+            return await memory.recall("seed data")
+
+        results = await asyncio.gather(
+            *[write(i) for i in range(5)],
+            *[read() for _ in range(5)],
+        )
+        writes = results[:5]
+        reads = results[5:]
+        assert all(isinstance(w, int) for w in writes)
+        assert all(isinstance(r, list) for r in reads)
+
+    async def test_concurrent_remember_forget_no_crash(self, memory):
+        """Deleting while inserting must not crash — aiosqlite serializes."""
+        ids = []
+        for i in range(5):
+            ids.append(await memory.remember(f"persist {i}"))
+
+        # Interleave deletes and inserts
+        await asyncio.gather(
+            memory.forget(ids[0]),
+            memory.forget(ids[1]),
+            memory.remember("new after delete"),
+        )
+
+        remaining = await memory.list_by_category("general")
+        # 5 original - 2 deleted + 1 new = 4
+        assert len(remaining) == 4
+
+    async def test_concurrent_conversation_turns_same_session(self, memory):
+        """Multiple conversation turns saved concurrently to the same session."""
+        session_id = "concurrent-sess"
+        await asyncio.gather(
+            *[
+                memory.save_conversation_turn(session_id, "user", f"msg {i}")
+                for i in range(10)
+            ]
+        )
+        history = await memory.load_conversation(session_id)
+        assert len(history) == 10
