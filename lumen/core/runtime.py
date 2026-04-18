@@ -8,6 +8,7 @@ from pathlib import Path
 
 import yaml
 
+from lumen.core.awareness import CapabilityAwareness
 from lumen.core.brain import Brain
 from lumen.core.catalog import Catalog
 from lumen.core.connectors import ConnectorRegistry
@@ -28,6 +29,7 @@ class RuntimeBootstrap:
     brain: Brain
     locale: dict
     config: dict
+    awareness: CapabilityAwareness | None = None
 
 
 def refresh_runtime_registry(
@@ -40,7 +42,10 @@ def refresh_runtime_registry(
 
     This preserves the runtime-owned truth (connectors, active MCP state, and
     active channels) instead of rebuilding discovery from installer-local data.
+
+    Re-subscribes CapabilityAwareness to the new registry so events keep flowing.
     """
+    old_registry = brain.registry
     registry = Registry()
     discover_all(
         registry=registry,
@@ -55,6 +60,10 @@ def refresh_runtime_registry(
         ),
     )
     brain.registry = registry
+
+    # Re-attach awareness subscription to the new registry
+    if brain.capability_awareness:
+        registry.subscribe(brain.capability_awareness._on_registry_event)
 
     if getattr(brain, "marketplace", None) is not None:
         brain.marketplace.sync_registry(registry)
@@ -165,6 +174,8 @@ async def bootstrap_runtime(
         mcp_config=mcp_manager.discovery_payload(),
     )
 
+    awareness = CapabilityAwareness(registry)
+
     catalog = Catalog()
     marketplace = Marketplace(
         catalog=catalog,
@@ -182,6 +193,7 @@ async def bootstrap_runtime(
         model=config.get("model", "deepseek/deepseek-chat"),
         mcp_manager=mcp_manager,
         marketplace=marketplace,
+        capability_awareness=awareness,
     )
     brain.module_manager = module_manager
     module_manager.brain = brain
@@ -197,7 +209,7 @@ async def bootstrap_runtime(
     if ui_path.exists():
         locale = yaml.safe_load(ui_path.read_text(encoding="utf-8")) or {}
 
-    return RuntimeBootstrap(brain=brain, locale=locale, config=config)
+    return RuntimeBootstrap(brain=brain, locale=locale, config=config, awareness=awareness)
 
 
 def _resolve_active_personality_module(

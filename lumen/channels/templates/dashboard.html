@@ -905,6 +905,10 @@
         typingIndicator.classList.add('hidden');
         addMessage('assistant', data.content);
       }
+      if (data.type === 'awareness' && data.content) {
+        typingIndicator.classList.add('hidden');
+        addMessage('assistant', data.content);
+      }
     });
 
     ws.addEventListener('close', () => {

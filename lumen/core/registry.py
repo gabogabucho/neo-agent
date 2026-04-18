@@ -5,13 +5,21 @@ Every skill, connector, module, channel, and MCP server must register here.
 
 The Body is separate from Consciousness (WHO Lumen is) and Brain (HOW Lumen thinks).
 Consciousness is immutable. The Body changes as you install or remove things.
+
+When the body changes, it emits events. Subscribers react.
+That's how Lumen feels its own growth.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
+
+from lumen.core.events import CapabilityEvent, EventCallback
+
+logger = logging.getLogger(__name__)
 
 
 class CapabilityKind(str, Enum):
@@ -85,10 +93,58 @@ class Registry:
 
     def __init__(self):
         self._capabilities: dict[str, Capability] = {}
+        self._subscribers: list[EventCallback] = []
+
+    def subscribe(self, callback: EventCallback):
+        """Subscribe to capability changes. Callback receives CapabilityEvent."""
+        self._subscribers.append(callback)
+
+    def unsubscribe(self, callback: EventCallback):
+        """Remove a subscriber."""
+        self._subscribers.discard(callback) if hasattr(self._subscribers, "discard") else None
+        try:
+            self._subscribers.remove(callback)
+        except ValueError:
+            pass
 
     def register(self, capability: Capability):
+        """Register a capability. Emits 'added' event if new."""
         key = f"{capability.kind.value}:{capability.name}"
+        is_new = key not in self._capabilities
         self._capabilities[key] = capability
+        if is_new:
+            self._emit("added", capability)
+            logger.debug("Capability registered: %s (%s)", capability.name, capability.kind.value)
+
+    def unregister(self, kind: CapabilityKind, name: str):
+        """Remove a capability. Emits 'removed' event."""
+        key = f"{kind.value}:{name}"
+        cap = self._capabilities.pop(key, None)
+        if cap:
+            self._emit("removed", cap)
+            logger.debug("Capability unregistered: %s (%s)", name, kind.value)
+
+    def update_status(self, kind: CapabilityKind, name: str, status: CapabilityStatus):
+        """Change a capability's status. Emits 'status_changed' if different."""
+        cap = self.get(kind, name)
+        if cap and cap.status != status:
+            old_status = cap.status
+            cap.status = status
+            self._emit("status_changed", cap, details={"from": old_status.value, "to": status.value})
+            logger.debug("Capability status changed: %s %s → %s", name, old_status.value, status.value)
+
+    def _emit(self, kind: str, capability: Capability, details: dict[str, Any] | None = None):
+        """Emit a capability event to all subscribers."""
+        event = CapabilityEvent(
+            kind=kind,
+            capability=capability,
+            details=details or {},
+        )
+        for callback in self._subscribers:
+            try:
+                callback(event)
+            except Exception:
+                logger.exception("Event subscriber error for %s event", kind)
 
     def get(self, kind: CapabilityKind, name: str) -> Capability | None:
         return self._capabilities.get(f"{kind.value}:{name}")

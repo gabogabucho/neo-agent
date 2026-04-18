@@ -180,7 +180,7 @@ def run(
     runtime, config = _prepare_runtime_if_configured(config)
 
     if runtime is not None:
-        configure(runtime.brain, runtime.locale, runtime.config)
+        configure(runtime.brain, runtime.locale, runtime.config, awareness=runtime.awareness)
         use_port = port or config.get("port", 3000)
         lang = config.get("language", "en")
         mcp_count = len(runtime.brain.registry.list_by_kind(CapabilityKind.MCP))
@@ -237,7 +237,7 @@ def serve(
     config = _load_persisted_config()
     runtime, config = _prepare_runtime_if_configured(config)
     if runtime is not None:
-        configure(runtime.brain, runtime.locale, runtime.config)
+        configure(runtime.brain, runtime.locale, runtime.config, awareness=runtime.awareness)
 
     setup_token = ensure_server_bootstrap(host=host, port=port)
     current = _load_persisted_config()

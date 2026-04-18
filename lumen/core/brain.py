@@ -7,6 +7,7 @@ The brain combines three sources into one prompt:
   - Consciousness (who I am — immutable soul)
   - Personality (who I am in this context — swappable)
   - Body/Registry (what I have — discovered at startup)
+  - Awareness (what just changed in my body)
   + Active flow, memories, conversation history
 """
 
@@ -16,6 +17,7 @@ from pathlib import Path
 import yaml
 from litellm import acompletion
 
+from lumen.core.awareness import CapabilityAwareness
 from lumen.core.catalog import Catalog
 from lumen.core.connectors import ConnectorRegistry
 from lumen.core.consciousness import Consciousness
@@ -44,6 +46,7 @@ class Brain:
         flows: list[dict] | None = None,
         mcp_manager=None,
         marketplace=None,
+        capability_awareness: CapabilityAwareness | None = None,
     ):
         self.consciousness = consciousness
         self.personality = personality
@@ -55,6 +58,7 @@ class Brain:
         self.flows = flows or []
         self.mcp_manager = mcp_manager
         self.marketplace = marketplace
+        self.capability_awareness = capability_awareness
 
     async def think(self, message: str, session: Session) -> dict:
         """Receive message -> assemble context -> LLM decides -> response."""
@@ -179,6 +183,48 @@ class Brain:
 
         return result
 
+    async def think_proactive(self) -> str | None:
+        """Generate a proactive announcement when capabilities changed.
+
+        Called by the heartbeat when awareness has pending changes.
+        Uses consciousness + awareness only — no conversation context needed.
+        The LLM decides whether and how to announce. Returns None if
+        awareness is empty or the LLM has nothing to say.
+        """
+        if not self.capability_awareness or not self.capability_awareness.has_pending_proactive():
+            return None
+
+        awareness_text = self.capability_awareness.format_for_proactive()
+        if not awareness_text:
+            return None
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    f"{self.consciousness.as_context()}\n\n"
+                    f"{awareness_text}\n\n"
+                    "You just noticed something changed in your capabilities. "
+                    "Briefly and naturally tell the user about it. "
+                    "One or two sentences max. Use your own words. "
+                    "If the change seems minor or irrelevant, respond with "
+                    "an empty string — don't force an announcement."
+                ),
+            }
+        ]
+
+        try:
+            response = await acompletion(
+                model=self.model,
+                messages=messages,
+                max_tokens=150,
+                temperature=0.7,
+            )
+            content = response.choices[0].message.content or ""
+            return content.strip() if content.strip() else None
+        except Exception:
+            return None
+
     def _read_skill(self, arguments: str) -> dict:
         """Read full SKILL.md content for on-demand loading (progressive disclosure).
 
@@ -264,6 +310,14 @@ class Brain:
             "3. If something is listed under 'What I CANNOT do' — you CANNOT do it. Do NOT claim you can.",
             "4. NEVER invent capabilities not listed in the Body.",
             "5. When asked what you can do, ONLY list what the Body says.",
+            "6. When the 'Something changed in my body' section appears, you MAY "
+            "mention it naturally in your response. Use your own words. "
+            "Example: if you just gained Telegram, say something like "
+            "'Ah, I can now reach you on Telegram too.' "
+            "Do NOT say 'Capability event: telegram channel added.'",
+            "7. When a user asks 'what can you do?', respond conversationally "
+            "using the Body section. Do NOT dump the raw list — translate "
+            "into human language.",
             "",
             # 1. CONSCIOUSNESS — the soul (never changes)
             context["consciousness"],
@@ -276,6 +330,13 @@ class Brain:
             # 3. BODY — discovered capabilities (changes per install)
             context["body"],
         ]
+
+        # 3b. AWARENESS — what just changed in my body (live feeling)
+        if self.capability_awareness:
+            awareness_context = self.capability_awareness.format_for_prompt()
+            if awareness_context:
+                system_parts.append("")
+                system_parts.append(awareness_context)
 
         # 4. CATALOG — what modules exist to fill gaps
         if context.get("catalog"):

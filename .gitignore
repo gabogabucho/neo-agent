@@ -36,3 +36,10 @@ neo/
 
 # Agent scratch directories
 .codex_clone/
+
+# User-installed modules (the installer copies catalog modules into lumen/modules/
+# at runtime). Only built-in modules (_template, scheduler) are tracked.
+lumen/modules/*
+!lumen/modules/_template/
+!lumen/modules/scheduler/
+!lumen/modules/.gitkeep

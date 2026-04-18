@@ -43,6 +43,9 @@ _brain = None
 _locale: dict = {}
 _config: dict = {}
 _access_mode = "run"
+_awareness = None  # CapabilityAwareness — set during bootstrap
+_active_websockets: set[WebSocket] = set()  # Track connected clients
+_watchers = None  # FilePoller — started in lifespan
 
 LUMEN_DIR = Path.home() / ".lumen"
 CONFIG_PATH = LUMEN_DIR / "config.yaml"
@@ -74,12 +77,13 @@ _oauth_state_store: dict[str, dict] = {}
 _oauth_state_lock = threading.Lock()
 
 
-def configure(brain, locale: dict, config: dict):
+def configure(brain, locale: dict, config: dict, awareness=None):
     """Configure the web channel (called by CLI when config exists)."""
-    global _brain, _locale, _config
+    global _brain, _locale, _config, _awareness
     _brain = brain
     _locale = locale
     _config = config
+    _awareness = awareness
 
 
 def configure_access_mode(mode: str = "run"):
@@ -540,6 +544,7 @@ async def _init_brain_from_config():
     _brain = runtime.brain
     _locale = runtime.locale
     _config = runtime.config
+    _awareness = runtime.awareness
 
     return True
 
@@ -640,9 +645,32 @@ def _exchange_openrouter_code(code: str, code_verifier: str) -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize async resources on startup."""
+    global _watchers
     if _brain:
         await _brain.memory.init()
+
+    # Start capability watchers if brain is ready
+    if _brain and _awareness:
+        from lumen.core.watchers import FilePoller
+
+        modules_dir = PKG_DIR / "modules"
+        skills_dir = PKG_DIR / "skills"
+        watched = [d for d in [modules_dir, skills_dir] if d.exists()]
+
+        async def _on_file_change():
+            """Called by FilePoller when filesystem changes detected."""
+            refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, active_channels=["web"])
+            await broadcast_awareness()
+
+        if watched:
+            _watchers = FilePoller(_brain.registry, watched, on_change=_on_file_change)
+            await _watchers.start(interval=120)
+
     yield
+
+    # Cleanup
+    if _watchers:
+        await _watchers.stop()
     if _brain:
         if isinstance(getattr(_brain, "module_manager", None), ModuleRuntimeManager):
             await _brain.module_manager.close()
@@ -1021,6 +1049,7 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
         return
     await websocket.accept()
     session = session_manager.get_or_create(session_id)
+    _active_websockets.add(websocket)
 
     # Hydrate session from persistent memory if empty (reconnect/refresh)
     if not session.history and _brain:
@@ -1038,6 +1067,17 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
             payload = json.loads(data)
 
             if payload.get("type") == "ping":
+                # Check for pending capability awareness — proactive announcement
+                if _awareness and _awareness.has_pending_proactive() and _brain:
+                    try:
+                        announcement = await _brain.think_proactive()
+                        if announcement:
+                            await websocket.send_text(json.dumps({
+                                "type": "awareness",
+                                "content": announcement,
+                            }))
+                    except Exception:
+                        pass
                 await websocket.send_text(json.dumps({"type": "pong"}))
                 continue
 
@@ -1064,6 +1104,42 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
 
     except WebSocketDisconnect:
         session_manager.remove(session_id)
+    finally:
+        _active_websockets.discard(websocket)
+
+
+async def broadcast_awareness():
+    """Send proactive capability announcements to all connected clients.
+
+    Called after module install/uninstall or MCP status changes.
+    Only sends if awareness has pending changes and brain is ready.
+    """
+    if not _awareness or not _brain or not _active_websockets:
+        return
+
+    if not _awareness.has_pending():
+        return
+
+    try:
+        announcement = await _brain.think_proactive()
+        if not announcement:
+            return
+
+        message = json.dumps({
+            "type": "awareness",
+            "content": announcement,
+        })
+        # Send to all active connections, remove failed ones
+        stale = []
+        for ws in _active_websockets:
+            try:
+                await ws.send_text(message)
+            except Exception:
+                stale.append(ws)
+        for ws in stale:
+            _active_websockets.discard(ws)
+    except Exception:
+        pass
 
 
 # ─── Debug API ───
@@ -1218,6 +1294,9 @@ async def api_modules_install(request: Request, name: str):
         if is_personality:
             reload_runtime_personality_surface(_brain, config=_config, pkg_dir=PKG_DIR)
 
+        # Proactively announce the new capability to connected clients
+        await broadcast_awareness()
+
     return result
 
 
@@ -1252,6 +1331,8 @@ async def api_modules_uninstall(request: Request, name: str):
         refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, active_channels=["web"])
         if was_active_personality:
             reload_runtime_personality_surface(_brain, config=_config, pkg_dir=PKG_DIR)
+
+        await broadcast_awareness()
 
     return result
 
@@ -1299,6 +1380,8 @@ async def api_modules_upload(request: Request):
         if is_personality:
             reload_runtime_personality_surface(_brain, config=_config, pkg_dir=PKG_DIR)
 
+        await broadcast_awareness()
+
     return result
 
 
@@ -1340,3 +1423,65 @@ async def api_status(request: Request):
         "ready": len(registry.ready()) if registry else 0,
         "gaps": len(registry.gaps()) if registry else 0,
     }
+
+
+# ─── Capability Hooks ───
+
+
+@app.post("/api/hooks/capability")
+async def api_capability_hook(request: Request):
+    """External systems can push capability changes here.
+
+    The registry updates, which emits an event, which the awareness
+    catches and translates into a feeling Lumen expresses naturally.
+
+    Body: {"kind": "mcp|skill|connector|module|channel",
+           "name": "...", "description": "...",
+           "status": "ready|available|error", "provides": [...]}
+    """
+    guard = _require_owner_access(request)
+    if guard is not None:
+        return guard
+
+    if not _brain:
+        return JSONResponse(status_code=503, content={"error": "Lumen not ready"})
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "Invalid JSON"})
+
+    kind_str = body.get("kind", "").lower()
+    name = body.get("name", "")
+    if not kind_str or not name:
+        return JSONResponse(
+            status_code=400, content={"error": "kind and name are required"}
+        )
+
+    try:
+        kind = CapabilityKind(kind_str)
+    except ValueError:
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"Invalid kind. Must be one of: {[k.value for k in CapabilityKind]}"},
+        )
+
+    status_str = body.get("status", "available")
+    try:
+        status = CapabilityStatus(status_str)
+    except ValueError:
+        status = CapabilityStatus.AVAILABLE
+
+    _brain.registry.register(
+        Capability(
+            kind=kind,
+            name=name,
+            description=body.get("description", ""),
+            status=status,
+            provides=body.get("provides", []),
+        )
+    )
+
+    await broadcast_awareness()
+
+    return {"status": "registered", "name": name, "kind": kind_str}
