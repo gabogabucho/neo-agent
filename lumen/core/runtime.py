@@ -102,7 +102,7 @@ async def bootstrap_runtime(
     consciousness = Consciousness()
     lang = config.get("language", "en")
     locale_personality_path = pkg_dir / "locales" / lang / "personality.yaml"
-    active_personality_module = _resolve_active_personality_module(config, pkg_dir)
+    active_personality_module = _resolve_active_personality_module(config, pkg_dir, lumen_dir)
     personality_path = _resolve_personality_path(
         active_personality_module, locale_personality_path
     )
@@ -161,8 +161,22 @@ async def bootstrap_runtime(
     return RuntimeBootstrap(brain=brain, locale=locale, config=config)
 
 
-def _resolve_active_personality_module(config: dict, pkg_dir: Path) -> dict | None:
+def _resolve_active_personality_module(config: dict, pkg_dir: Path, lumen_dir: Path | None = None) -> dict | None:
     module_name = config.get("active_personality")
+
+    if lumen_dir is not None:
+        config_path = lumen_dir / "config.yaml"
+        if config_path.exists():
+            try:
+                import yaml
+                disk_config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+                if "active_personality" in disk_config:
+                    module_name = disk_config["active_personality"]
+                    config["active_personality"] = module_name
+            except Exception as e:
+                import logging
+                logging.warning(f"Failed to load active_personality from disk config: {e}")
+
     if not module_name:
         return None
 

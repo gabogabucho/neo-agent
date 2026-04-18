@@ -790,7 +790,19 @@ async def api_modules_install(name: str):
     result = installer.install_from_catalog(name)
 
     if result["status"] == "installed":
+        global _config
+        is_personality = False
+        manifest = _installed_personality_manifest(name)
+        if manifest:
+            tags = _normalize_module_tags(manifest.get("tags"))
+            if "personality" in tags:
+                is_personality = True
+                _config = _merge_save_config({"active_personality": name})
+
         refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, active_channels=["web"])
+        
+        if is_personality:
+            reload_runtime_personality_surface(_brain, config=_config, pkg_dir=PKG_DIR)
 
     return result
 
@@ -830,7 +842,23 @@ async def api_modules_upload(request: Request):
     result = installer.install_from_zip(body)
 
     if result["status"] == "installed":
+        global _config
+        is_personality = False
+        
+        # result typically includes the 'name' of the installed module
+        module_name = result.get("name")
+        if module_name:
+            manifest = _installed_personality_manifest(module_name)
+            if manifest:
+                tags = _normalize_module_tags(manifest.get("tags"))
+                if "personality" in tags:
+                    is_personality = True
+                    _config = _merge_save_config({"active_personality": module_name})
+
         refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, active_channels=["web"])
+
+        if is_personality:
+            reload_runtime_personality_surface(_brain, config=_config, pkg_dir=PKG_DIR)
 
     return result
 
