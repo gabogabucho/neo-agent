@@ -173,11 +173,9 @@ def _resolve_active_personality_module(config: dict, pkg_dir: Path, lumen_dir: P
                 if "active_personality" in disk_config:
                     module_name = disk_config["active_personality"]
                     config["active_personality"] = module_name
-            except (OSError, yaml.YAMLError) as e:
+            except Exception as e:
                 import logging
-                # Silenced because failing to read disk config should not crash the boot process; 
-                # we gracefully fallback to whatever was already in memory or default config.
-                logging.getLogger(__name__).warning(f"Failed to load active_personality from disk config: {e}")
+                logging.warning(f"Failed to load active_personality from disk config: {e}")
 
     if not module_name:
         return None
