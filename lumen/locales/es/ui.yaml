@@ -17,3 +17,16 @@ dashboard:
   chat_placeholder: "Escribe un mensaje..."
   send: "Enviar"
   welcome: "Hola, soy Lumen — tu asistente personal. Te ayudo con tareas, notas y busquedas. ¿En que puedo ayudarte?"
+
+awakening:
+  iam: "Yo soy <span>Lumen</span>."
+  ready: "Lumen está lista."
+  enter: "Comenzar &rarr;"
+  conn_start: "Iniciando conexión..."
+  identity: "Identidad: <span class=\"count\">Lumen</span>, asistente lista"
+  sync: "Sincronizando..."
+  skills: "habilidades cargadas"
+  modules: "módulos conectados"
+  systems_online: "Sistemas online"
+  dark_spots: "puntos oscuros — esperando luz"
+  model: "Modelo:"

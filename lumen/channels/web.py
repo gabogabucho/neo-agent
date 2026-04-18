@@ -430,10 +430,11 @@ async def root(request: Request):
         await _brain.memory.init()
 
     if not _has_awakened():
+        ui = _locale.get("awakening", {})
         return templates.TemplateResponse(
             request,
             "awakening.html",
-            context={"language": _config.get("language", "en")},
+            context={"language": _config.get("language", "en"), "ui": ui},
         )
 
     return RedirectResponse(url="/dashboard")

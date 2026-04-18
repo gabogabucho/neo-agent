@@ -17,3 +17,16 @@ dashboard:
   chat_placeholder: "Type a message..."
   send: "Send"
   welcome: "Hi, I'm Lumen — your personal assistant. I can help you with tasks, notes, and searches. What can I do for you?"
+
+awakening:
+  iam: "I am <span>Lumen</span>."
+  ready: "Lumen is ready."
+  enter: "Enter Dashboard &rarr;"
+  conn_start: "Illuminating consciousness..."
+  identity: "Identity: <span class=\"count\">Lumen</span>, Modular AI Agent"
+  sync: "Scanning body..."
+  skills: "skills illuminated"
+  modules: "connectors found"
+  systems_online: "channels online"
+  dark_spots: "dark spots — awaiting light"
+  model: "Model:"
