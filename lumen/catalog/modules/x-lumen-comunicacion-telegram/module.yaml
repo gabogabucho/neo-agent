@@ -11,5 +11,11 @@ tags: [x-lumen, comunicacion, telegram]
 x-lumen:
   runtime:
     env:
-      - TELEGRAM_BOT_TOKEN
-      - TELEGRAM_DEFAULT_CHAT_ID
+      - name: TELEGRAM_BOT_TOKEN
+        label: "Token del bot de Telegram"
+        hint: "Creá un bot con @BotFather y pegá el token que te devuelve (formato 123456:ABC...)."
+        secret: true
+      - name: TELEGRAM_DEFAULT_CHAT_ID
+        label: "Chat ID por defecto"
+        hint: "Escribile a tu bot una vez y abrí https://api.telegram.org/bot<TU_TOKEN>/getUpdates — el chat.id es el número que aparece ahí."
+        secret: false
