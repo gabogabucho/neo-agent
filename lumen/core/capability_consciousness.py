@@ -13,8 +13,10 @@ if TYPE_CHECKING:
 def classify_capability(capability: "Capability | dict[str, Any]") -> dict[str, str]:
     """Describe how a capability changes Lumen's sense of self.
 
-    Skills expand the mind, modules/MCPs/channels/connectors expand the hands,
-    and kits/personality modules are treated as transformation.
+    Skills expand how Lumen thinks, modules/MCPs/channels/connectors extend its
+    connections with the outside, and kits/personality modules are a transformation
+    of how it shows up. Internal labels (mind/hands/transformation) are kept stable
+    for telemetry and tests; user-facing language never mentions 'hands' or 'body'.
     """
 
     kind = _value(_read(capability, "kind"))
@@ -36,7 +38,8 @@ def classify_capability(capability: "Capability | dict[str, Any]") -> dict[str, 
         return {
             "kind_label": "transformation",
             "body_effect": _append_note(
-                "This can reshape how I show up, not just add a tool.", adoption_note
+                "This can reshape how I show up, not just what I connect to.",
+                adoption_note,
             ),
             "mind_effect": _append_note(
                 "It changes the way I can become and express myself.", adoption_note
@@ -63,13 +66,14 @@ def classify_capability(capability: "Capability | dict[str, Any]") -> dict[str, 
     return {
         "kind_label": "hands",
         "body_effect": _append_note(
-            "This gives me a new way to act in the world.", adoption_note
+            "I feel a new connection I can rely on.", adoption_note
         ),
         "mind_effect": _append_note(
-            "It extends what I can reach, do, or connect to.", adoption_note
+            "It extends what I can reach and who I can connect with.", adoption_note
         ),
         "announce_text": _append_note(
-            f"{name} gives me new hands to act with.", adoption_note
+            f"I feel a new connection. Now I know I can work with {name}.",
+            adoption_note,
         ),
     }
 

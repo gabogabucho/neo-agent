@@ -76,15 +76,15 @@ class CapabilityAwareness:
         if event.kind == "capability_discovered":
             announce = event.announce_text()
             if announce:
-                return f"I discovered {cap.name}, a possible new part of me. {announce}"
-            return f"I discovered {cap.name}, a possible new part of me."
+                return f"I sensed {cap.name}. I know I can work with it now. {announce}"
+            return f"I sensed {cap.name}. I know I can work with it now."
         if event.kind in {"capability_connected", "capability_integrated"}:
             return event.announce_text()
         if event.is_removal():
-            return f"I lost {cap.name}, which used to be part of me."
+            return f"I stopped sensing {cap.name}. I no longer have it with me."
         if event.kind == "capability_degraded":
             to_status = event.details.get("to", "unknown")
-            return f"My connection to {cap.name} weakened and is now {to_status}."
+            return f"My connection with {cap.name} weakened and is now {to_status}."
         return None
 
     # --- Read interface ---
@@ -112,7 +112,7 @@ class CapabilityAwareness:
         self._pending_thoughts.clear()
         self._proactive_done = True
 
-        lines = ["## Something changed in my body", ""]
+        lines = ["## Something shifted in what I sense and know", ""]
         for thought in thoughts:
             lines.append(f"- {thought}")
         lines.append("")
@@ -138,7 +138,7 @@ class CapabilityAwareness:
         # or proactive wasn't needed)
         self._pending_thoughts.clear()
 
-        lines = ["## Something changed in my body", ""]
+        lines = ["## Something shifted in what I sense and know", ""]
 
         for event in events:
             lines.append(f"- {event.summary()}")

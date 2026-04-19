@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "lumen-agent"
 version = "0.1.0"
 description = "Open-source AI agent engine. Modular. No limits."
+readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 authors = [
@@ -30,7 +31,7 @@ dependencies = [
     "uvicorn[standard]>=0.30.0",
     "aiosqlite>=0.20.0",
     "pyyaml>=6.0",
-    "typer[all]>=0.12.0",
+    "typer>=0.12.0",
     "jinja2>=3.1.0",
     "websockets>=12.0",
     "pydantic>=2.7.0",

@@ -1644,6 +1644,101 @@ async def api_status(request: Request):
     }
 
 
+# ─── OpenRouter model catalog ───
+
+OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
+_openrouter_models_cache: dict[str, object] = {"fetched_at": 0.0, "items": []}
+_OPENROUTER_MODELS_TTL = 300.0
+
+
+def _fetch_openrouter_models() -> list[dict]:
+    """Fetch and cache OpenRouter's public model catalog (300s TTL)."""
+    now = time()
+    if (
+        _openrouter_models_cache.get("items")
+        and now - float(_openrouter_models_cache.get("fetched_at") or 0) < _OPENROUTER_MODELS_TTL
+    ):
+        return list(_openrouter_models_cache["items"])  # type: ignore[arg-type]
+
+    try:
+        req = UrlRequest(
+            OPENROUTER_MODELS_URL,
+            headers={"User-Agent": "lumen-agent/0.1.0", "Accept": "application/json"},
+        )
+        with urlopen(req, timeout=8) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, ValueError):
+        return list(_openrouter_models_cache.get("items") or [])
+
+    raw = payload.get("data") if isinstance(payload, dict) else None
+    items: list[dict] = []
+    for entry in raw or []:
+        if not isinstance(entry, dict):
+            continue
+        model_id = str(entry.get("id") or "").strip()
+        if not model_id:
+            continue
+        pricing = entry.get("pricing") or {}
+        prompt_cost = str(pricing.get("prompt") or "0")
+        completion_cost = str(pricing.get("completion") or "0")
+        is_free = model_id.endswith(":free") or (
+            prompt_cost in {"0", "0.0", "0.00", "0.000", ""}
+            and completion_cost in {"0", "0.0", "0.00", "0.000", ""}
+        )
+        items.append(
+            {
+                "id": model_id,
+                "name": str(entry.get("name") or model_id),
+                "description": str(entry.get("description") or "")[:220],
+                "context_length": entry.get("context_length"),
+                "is_free": bool(is_free),
+            }
+        )
+
+    _openrouter_models_cache["items"] = items
+    _openrouter_models_cache["fetched_at"] = now
+    return items
+
+
+@app.get("/api/openrouter/models")
+async def api_openrouter_models(request: Request):
+    """List OpenRouter models (curated + full catalog) for the settings picker."""
+    guard = _require_owner_access(request)
+    if guard is not None:
+        return guard
+
+    models = _fetch_openrouter_models()
+    free_models = [m for m in models if m["is_free"]]
+    # Curated first: keep canonical ordering from the constant.
+    curated = []
+    curated_lookup = {m["id"]: m for m in models}
+    for model_id in [
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "deepseek/deepseek-chat:free",
+        "mistralai/mistral-7b-instruct:free",
+        "google/gemma-3-27b-it:free",
+    ]:
+        if model_id in curated_lookup:
+            curated.append(curated_lookup[model_id])
+        else:
+            curated.append(
+                {
+                    "id": model_id,
+                    "name": model_id,
+                    "description": "",
+                    "context_length": None,
+                    "is_free": True,
+                }
+            )
+
+    return {
+        "curated": curated,
+        "free": free_models,
+        "all": models,
+        "total": len(models),
+    }
+
+
 # ─── Capability Hooks ───
 
 

@@ -217,6 +217,140 @@
 
     /* === Chat === */
     .chat-panel { display: flex; flex-direction: column; height: 100%; }
+    .chat-layout { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+    .chat-center { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+    /* Pulse strip — subtle life indicator, "like pressing to find a pulse" */
+    .pulse-strip {
+      display: flex;
+      gap: 6px;
+      padding: 10px 0 6px;
+      justify-content: center;
+      opacity: 0.55;
+      transition: opacity 400ms ease, filter 400ms ease;
+    }
+    .pulse-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.35;
+      transition: transform 500ms ease, opacity 500ms ease, box-shadow 400ms ease;
+    }
+    .pulse-strip.heartbeat .pulse-dot { animation: pulse-heart 2s ease-out; }
+    .pulse-strip.awaken .pulse-dot { animation: pulse-wave 1.6s ease-out; }
+    .pulse-strip.offline { opacity: 0.25; filter: grayscale(1); }
+    .pulse-strip.offline .pulse-dot { opacity: 0.2; }
+    @keyframes pulse-heart {
+      0%   { transform: scale(1); opacity: 0.35; }
+      25%  { transform: scale(1.5); opacity: 1; }
+      55%  { transform: scale(1); opacity: 0.4; }
+      100% { transform: scale(1); opacity: 0.35; }
+    }
+    @keyframes pulse-wave {
+      0%   { transform: scale(1); opacity: 0.35; box-shadow: 0 0 0 currentColor; }
+      30%  { transform: scale(1.8); opacity: 1; box-shadow: 0 0 8px currentColor; }
+      70%  { transform: scale(1.2); opacity: 0.7; box-shadow: 0 0 2px currentColor; }
+      100% { transform: scale(1); opacity: 0.35; box-shadow: 0 0 0 currentColor; }
+    }
+    .pulse-dot:nth-child(1) { color: #5b7dff; animation-delay: 0ms !important; }
+    .pulse-dot:nth-child(2) { color: #7a88ee; animation-delay: 70ms !important; }
+    .pulse-dot:nth-child(3) { color: #9a93dd; animation-delay: 140ms !important; }
+    .pulse-dot:nth-child(4) { color: #b89fcc; animation-delay: 210ms !important; }
+    .pulse-dot:nth-child(5) { color: #d6abbb; animation-delay: 280ms !important; }
+    .pulse-dot:nth-child(6) { color: #e9bca9; animation-delay: 350ms !important; }
+    .pulse-dot:nth-child(7) { color: #ecc997; animation-delay: 420ms !important; }
+
+    /* Sense panel — "lo que sé que tengo" */
+    .sense-panel {
+      width: 240px;
+      flex-shrink: 0;
+      border-left: 1px solid var(--lumen-line);
+      background: var(--lumen-paper-2);
+      overflow-y: auto;
+      padding: var(--lumen-s-4);
+      display: flex;
+      flex-direction: column;
+      gap: var(--lumen-s-4);
+    }
+    .sense-panel h4 {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--lumen-ink-soft);
+      margin: 0 0 8px;
+      font-weight: 600;
+    }
+    .sense-group { display: flex; flex-direction: column; gap: 6px; }
+    .sense-item {
+      padding: 8px 10px;
+      background: var(--lumen-paper);
+      border: 1px solid var(--lumen-line);
+      border-radius: 8px;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .sense-item-name { font-weight: 600; color: var(--lumen-ink); display: block; }
+    .sense-item-desc { color: var(--lumen-ink-soft); font-size: 11px; display: block; margin-top: 2px; }
+    .sense-empty { color: var(--lumen-ink-soft); font-style: italic; font-size: 11px; opacity: 0.7; }
+    @media (max-width: 960px) { .sense-panel { display: none; } }
+
+    /* OpenRouter model picker */
+    .model-picker-wrapper {
+      margin-top: 10px;
+      border: 1px solid var(--lumen-line);
+      border-radius: 10px;
+      background: var(--lumen-paper-2);
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .model-picker-wrapper.hidden { display: none; }
+    .model-picker-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .model-picker-tab { font-size: 12px; padding: 4px 10px; }
+    .model-picker-tab.active {
+      background: var(--lumen-ink);
+      color: var(--lumen-paper);
+      border-color: var(--lumen-ink);
+    }
+    .model-picker-list {
+      max-height: 260px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .model-picker-item {
+      padding: 8px 10px;
+      background: var(--lumen-paper);
+      border: 1px solid var(--lumen-line);
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 12px;
+      line-height: 1.35;
+      transition: border-color 0.15s ease, background 0.15s ease;
+    }
+    .model-picker-item:hover { border-color: var(--lumen-ink); }
+    .model-picker-item.selected { border-color: var(--lumen-ink); background: rgba(15,21,69,0.04); }
+    .model-picker-item-name { font-weight: 600; color: var(--lumen-ink); display: block; }
+    .model-picker-item-meta { color: var(--lumen-ink-soft); font-size: 11px; display: block; margin-top: 2px; }
+    .model-picker-free-badge {
+      display: inline-block;
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 6px;
+      background: rgba(110,185,120,0.15);
+      color: #2f7a3e;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
     .chat-messages {
       flex: 1;
       overflow-y: auto;
@@ -707,36 +841,65 @@
 
     <!-- Chat Panel (default) -->
     <div id="panel-chat" class="panel no-pad chat-panel">
-      <div id="chat-messages" class="chat-messages">
-        <div id="chat-empty" class="chat-empty">
-          {{ animated_eye(size="boot") }}
-          <div class="hello">{{ ui.greeting | default('Hola, soy Lumen.') }}</div>
-          <div class="sub">{{ ui.welcome | default('Soy un asistente modular: puedo adaptarme a lo que necesitás sumando capacidades, personalidades y herramientas a medida.') }}</div>
-        </div>
-      </div>
+      <div class="chat-layout">
+        <div class="chat-center">
+          <div class="pulse-strip" id="pulse-strip" aria-hidden="true" title="{{ ui.pulse_hint | default('Lumen está escuchando') }}">
+            <span class="pulse-dot"></span>
+            <span class="pulse-dot"></span>
+            <span class="pulse-dot"></span>
+            <span class="pulse-dot"></span>
+            <span class="pulse-dot"></span>
+            <span class="pulse-dot"></span>
+            <span class="pulse-dot"></span>
+          </div>
 
-      <div id="typing-indicator" class="typing hidden">
-        <div class="bubble">
-          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-        </div>
-      </div>
+          <div id="chat-messages" class="chat-messages">
+            <div id="chat-empty" class="chat-empty">
+              {{ animated_eye(size="boot") }}
+              <div class="hello">{{ ui.greeting | default('Hola, soy Lumen.') }}</div>
+              <div class="sub">{{ ui.welcome | default('Soy un asistente modular: puedo adaptarme a lo que necesitás sumando capacidades, personalidades y herramientas a medida.') }}</div>
+            </div>
+          </div>
 
-      <div class="composer">
-        <form id="chat-form">
-          <input
-            id="chat-input"
-            class="l-input"
-            type="text"
-            placeholder="{{ ui.chat_placeholder | default('Escribe un mensaje...') }}"
-            autocomplete="off"
-          />
-          <button type="submit" class="l-btn">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
-            </svg>
-            {{ ui.send | default('Enviar') }}
-          </button>
-        </form>
+          <div id="typing-indicator" class="typing hidden">
+            <div class="bubble">
+              <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            </div>
+          </div>
+
+          <div class="composer">
+            <form id="chat-form">
+              <input
+                id="chat-input"
+                class="l-input"
+                type="text"
+                placeholder="{{ ui.chat_placeholder | default('Escribe un mensaje...') }}"
+                autocomplete="off"
+              />
+              <button type="submit" class="l-btn">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                </svg>
+                {{ ui.send | default('Enviar') }}
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <aside class="sense-panel" id="sense-panel" aria-label="{{ ui.sense_title | default('Lo que sé que tengo') }}">
+          <div>
+            <h4>{{ ui.sense_native | default('Lo que sé que tengo') }}</h4>
+            <div class="sense-group" id="sense-native"></div>
+          </div>
+          <div>
+            <h4>{{ ui.sense_adapted | default('Lo que me llegó adaptado') }}</h4>
+            <div class="sense-group" id="sense-adapted"></div>
+          </div>
+          <div>
+            <h4>{{ ui.sense_opaque | default('Lo que conozco pero no alcanzo') }}</h4>
+            <div class="sense-group" id="sense-opaque"></div>
+          </div>
+        </aside>
       </div>
     </div>
 
@@ -847,6 +1010,18 @@
               <div class="field">
                 <label for="settings-model">{{ ui.model | default('Modelo') }}</label>
                 <input id="settings-model" name="model" class="l-input" type="text" value="{{ model }}" autocomplete="off" required />
+                <div id="model-picker-wrapper" class="model-picker-wrapper hidden">
+                  <div class="model-picker-head">
+                    <div class="pill-row" style="gap:6px;">
+                      <button type="button" class="l-pill model-picker-tab active" data-picker-tab="free" onclick="switchModelPickerTab('free')">{{ ui.model_picker_free | default('Gratis') }}</button>
+                      <button type="button" class="l-pill model-picker-tab" data-picker-tab="all" onclick="switchModelPickerTab('all')">{{ ui.model_picker_all | default('Todos') }}</button>
+                    </div>
+                    <input id="model-picker-search" type="search" class="l-input" placeholder="{{ ui.model_picker_search | default('Buscar modelo...') }}" style="max-width:220px;font-size:12px;padding:6px 10px;" />
+                  </div>
+                  <div id="model-picker-list" class="model-picker-list">
+                    <p class="sense-empty">{{ ui.model_picker_loading | default('Cargando modelos...') }}</p>
+                  </div>
+                </div>
               </div>
               <div class="field">
                 <label for="settings-api-key-env">API key env</label>
@@ -1075,25 +1250,81 @@
       chatInput.focus();
     });
 
+    // === Pulse strip — subtle life indicator ===
+    const pulseStrip = document.getElementById('pulse-strip');
+    function pulse(kind) {
+      if (!pulseStrip) return;
+      pulseStrip.classList.remove('heartbeat', 'awaken');
+      void pulseStrip.offsetWidth;
+      pulseStrip.classList.add(kind);
+      setTimeout(() => pulseStrip && pulseStrip.classList.remove(kind), 2100);
+    }
+    let lifePulseTimer = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) pulse('heartbeat');
+    }, 12000);
+
+    // === Sense panel — lo que sé que tengo ===
+    async function renderSensePanel() {
+      try {
+        const res = await fetch('/api/status');
+        if (!res.ok) return;
+        const data = await res.json();
+        const caps = (data.capabilities || []).filter(c => (c.status || 'ready') !== 'error');
+        const groups = { native: [], adapted: [], opaque: [] };
+        caps.forEach(c => {
+          const meta = c.metadata || {};
+          const interop = meta.interoperability || {};
+          const level = (interop.level || 'native').toLowerCase();
+          (groups[level] || groups.native).push(c);
+        });
+        renderSenseGroup('sense-native', groups.native, '{{ ui.sense_empty_native | default("Aún no sumo capacidades propias.") }}');
+        renderSenseGroup('sense-adapted', groups.adapted, '{{ ui.sense_empty_adapted | default("Nada adoptado por ahora.") }}');
+        renderSenseGroup('sense-opaque', groups.opaque, '{{ ui.sense_empty_opaque | default("No veo nada fuera de mi alcance.") }}');
+      } catch (e) {}
+    }
+    function renderSenseGroup(id, items, emptyMsg) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (!items || items.length === 0) {
+        el.innerHTML = `<div class="sense-empty">${escapeHtml(emptyMsg)}</div>`;
+        return;
+      }
+      el.innerHTML = items.map(c => `
+        <div class="sense-item">
+          <span class="sense-item-name">${escapeHtml(c.name || '')}</span>
+          <span class="sense-item-desc">${escapeHtml(c.description || '')}</span>
+        </div>
+      `).join('');
+    }
+    renderSensePanel();
+
     ws.addEventListener('message', (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'pong') return;
       if (data.type === 'typing') {
         typingIndicator.classList.toggle('hidden', !data.status);
-        if (data.status) chatMessages.scrollTop = chatMessages.scrollHeight;
+        if (data.status) {
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+          pulse('heartbeat');
+        }
       }
       if (data.type === 'message' && data.role === 'assistant') {
         typingIndicator.classList.add('hidden');
         addMessage('assistant', data.content);
+        pulse('heartbeat');
       }
       if (data.type === 'awareness' && data.content) {
         typingIndicator.classList.add('hidden');
         addMessage('assistant', data.content);
+        pulse('awaken');
+        renderSensePanel();
       }
     });
 
     ws.addEventListener('close', () => {
       if (heartbeatTimer) clearInterval(heartbeatTimer);
+      if (lifePulseTimer) clearInterval(lifePulseTimer);
+      if (pulseStrip) pulseStrip.classList.add('offline');
       addMessage('assistant', '{{ ui.connection_lost | default("Se perdió la conexión. Recarga la página.") }}');
     });
 
@@ -1114,6 +1345,97 @@
       settingsMessage.textContent = text;
       settingsMessage.className = `settings-message ${kind}`.trim();
     }
+
+    // === OpenRouter model picker ===
+    const modelPickerWrapper = document.getElementById('model-picker-wrapper');
+    const modelPickerList = document.getElementById('model-picker-list');
+    const modelPickerSearch = document.getElementById('model-picker-search');
+    let modelPickerTab = 'free';
+    let modelPickerData = { curated: [], free: [], all: [] };
+    let modelPickerLoaded = false;
+
+    function renderModelPicker() {
+      if (!modelPickerList) return;
+      const q = (modelPickerSearch?.value || '').trim().toLowerCase();
+      let items = [];
+      if (modelPickerTab === 'free') {
+        const seen = new Set();
+        const merged = [];
+        (modelPickerData.curated || []).forEach(m => {
+          if (seen.has(m.id)) return;
+          seen.add(m.id);
+          merged.push(m);
+        });
+        (modelPickerData.free || []).forEach(m => {
+          if (seen.has(m.id)) return;
+          seen.add(m.id);
+          merged.push(m);
+        });
+        items = merged;
+      } else {
+        items = modelPickerData.all || [];
+      }
+      if (q) items = items.filter(m => (m.id + ' ' + (m.name || '') + ' ' + (m.description || '')).toLowerCase().includes(q));
+      if (!items.length) {
+        modelPickerList.innerHTML = '<p class="sense-empty">{{ ui.model_picker_empty | default("No encontré modelos que coincidan.") }}</p>';
+        return;
+      }
+      const currentModel = (document.getElementById('settings-model')?.value || '').trim();
+      modelPickerList.innerHTML = items.slice(0, 120).map(m => {
+        const selected = m.id === currentModel ? 'selected' : '';
+        const freeBadge = m.is_free ? '<span class="model-picker-free-badge">{{ ui.model_picker_free_badge | default("gratis") }}</span>' : '';
+        const ctx = m.context_length ? `${Math.round(m.context_length / 1000)}K ctx` : '';
+        const metaParts = [ctx, m.description].filter(Boolean).join(' · ');
+        return `<div class="model-picker-item ${selected}" data-model-id="${escapeHtml(m.id)}" onclick="selectModelFromPicker(this)">
+          <span class="model-picker-item-name">${escapeHtml(m.name || m.id)}${freeBadge}</span>
+          <span class="model-picker-item-meta">${escapeHtml(m.id)}${metaParts ? ' — ' + escapeHtml(metaParts) : ''}</span>
+        </div>`;
+      }).join('');
+    }
+
+    function switchModelPickerTab(tab) {
+      modelPickerTab = tab;
+      document.querySelectorAll('.model-picker-tab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.pickerTab === tab);
+      });
+      renderModelPicker();
+    }
+    window.switchModelPickerTab = switchModelPickerTab;
+
+    function selectModelFromPicker(el) {
+      const id = el.dataset.modelId;
+      if (!id) return;
+      const input = document.getElementById('settings-model');
+      if (input) input.value = id;
+      document.querySelectorAll('.model-picker-item').forEach(item => item.classList.remove('selected'));
+      el.classList.add('selected');
+    }
+    window.selectModelFromPicker = selectModelFromPicker;
+
+    async function loadModelPicker() {
+      if (modelPickerLoaded || !modelPickerList) return;
+      modelPickerLoaded = true;
+      try {
+        const res = await fetch('/api/openrouter/models');
+        if (!res.ok) throw new Error('catalog fetch failed');
+        modelPickerData = await res.json();
+      } catch (e) {
+        modelPickerData = { curated: [], free: [], all: [] };
+      }
+      renderModelPicker();
+    }
+
+    function refreshModelPickerVisibility() {
+      if (!modelPickerWrapper) return;
+      const provider = (document.getElementById('settings-provider')?.value || '').trim().toLowerCase();
+      const shouldShow = provider === 'openrouter';
+      modelPickerWrapper.classList.toggle('hidden', !shouldShow);
+      if (shouldShow) loadModelPicker();
+    }
+
+    document.getElementById('settings-provider')?.addEventListener('input', refreshModelPickerVisibility);
+    modelPickerSearch?.addEventListener('input', renderModelPicker);
+    refreshModelPickerVisibility();
 
     settingsForm?.addEventListener('submit', async (event) => {
       event.preventDefault();

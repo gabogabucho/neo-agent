@@ -66,7 +66,7 @@ class CapabilityEvent:
 
     def summary(self) -> str:
         cap = self.capability
-        lens = self.classification()["kind_label"]
+        lens = _display_lens(self.classification()["kind_label"])
         note = awareness_interoperability_note(cap)
         if self.kind == "capability_discovered":
             summary = f"+ discovered {cap.name} ({cap.kind.value}, {lens}): {cap.description}"
@@ -95,6 +95,23 @@ class CapabilityEvent:
 
 # Type alias for clarity
 EventCallback = Callable[[CapabilityEvent], None]
+
+
+_LENS_DISPLAY = {
+    "hands": "connection",
+    "mind": "thinking",
+    "transformation": "transformation",
+}
+
+
+def _display_lens(kind_label: str) -> str:
+    """Map internal classifier labels to user-facing lenses.
+
+    'hands' is a valid internal category but carries anatomical baggage in
+    user-facing text. Present it as 'connection' without changing the label
+    itself, so tests and telemetry stay stable.
+    """
+    return _LENS_DISPLAY.get(kind_label, kind_label)
 
 
 def _append_interoperability_summary(
