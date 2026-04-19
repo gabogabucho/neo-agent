@@ -143,3 +143,47 @@ def test_awareness_summary_exposes_structured_event_payloads():
     assert summary["effects"]["mind"] == 2
     assert summary["events"][1]["classification"]["kind_label"] == "mind"
     assert "new way of thinking" in summary["events"][1]["announce_text"]
+
+
+def test_awareness_mentions_external_adoption_level_for_adapted_capabilities():
+    registry = Registry()
+    awareness = CapabilityAwareness(registry)
+    registry.register(
+        Capability(
+            kind=CapabilityKind.SKILL,
+            name="bridge-skill",
+            description="external skill",
+            status=CapabilityStatus.READY,
+            metadata={
+                "interoperability": {
+                    "level": "adapted",
+                    "label": "Adapted",
+                    "install_path": "adapted",
+                    "summary": "Adopted from an external ecosystem through a lightweight adapter.",
+                }
+            },
+        )
+    )
+
+    proactive = awareness.format_for_proactive()
+    prompt = awareness.format_for_prompt()
+    summary = awareness.peek_summary()
+
+    assert proactive is not None
+    assert "adapted bridge" in proactive
+    assert prompt is not None
+    assert "adapted into Lumen from an external ecosystem" in prompt
+    assert summary["pending"] == 0
+
+
+def test_consciousness_defaults_plain_runtime_capabilities_to_native_interoperability():
+    classification = classify_capability(
+        Capability(
+            kind=CapabilityKind.SKILL,
+            name="plain-skill",
+            description="plain capability",
+            status=CapabilityStatus.READY,
+        )
+    )
+
+    assert "adapted bridge" not in classification["announce_text"]

@@ -89,6 +89,7 @@ def _discover_skill_file(registry: Registry, skill_file: Path, fallback_name: st
                 metadata={
                     "level": normalized.metadata.get("level", 1),
                     "path": str(skill_file),
+                    "interoperability": normalized.metadata.get("interoperability"),
                 },
             )
         )
@@ -129,6 +130,9 @@ def _discover_skills(registry: Registry, skills_dir: Path):
                     metadata={
                         "level": level,
                         "path": str(skill_file),
+                        "interoperability": normalized.metadata.get(
+                            "interoperability"
+                        ),
                     },
                 )
             )
@@ -202,7 +206,11 @@ def _discover_modules(registry: Registry, modules_dir: Path):
             manifest_file, manifest = load_module_manifest(module_dir)
             if manifest_file is None:
                 continue
-            normalized = normalize_module_manifest(manifest, installed=True)
+            normalized = normalize_module_manifest(
+                manifest,
+                installed=True,
+                manifest_path=str(manifest_file),
+            )
             name = normalized.name or module_dir.name
 
             # Module is installed (it's in modules/ dir) — check if its skill is ready
@@ -225,6 +233,9 @@ def _discover_modules(registry: Registry, modules_dir: Path):
                         "tags": normalized.metadata.get("tags", []),
                         "min_capability": manifest.get("min_capability", "tier-1"),
                         "manifest_path": str(manifest_file),
+                        "interoperability": normalized.metadata.get(
+                            "interoperability"
+                        ),
                         "schema_aliases": normalized.metadata.get("schema_aliases", {}),
                         "x_lumen": normalized.metadata.get("x_lumen", {}),
                     },

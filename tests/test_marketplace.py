@@ -134,15 +134,27 @@ class MarketplaceTests(unittest.TestCase):
         self.assertEqual(snapshot["skills"]["counts"]["available"], 1)
         self.assertEqual(snapshot["skills"]["items"][0]["name"], "notify")
         self.assertEqual(
+            snapshot["skills"]["items"][0]["interoperability"]["level"], "adapted"
+        )
+        self.assertEqual(
+            snapshot["skills"]["items"][0]["interoperability"]["label"], "Adapted"
+        )
+        self.assertEqual(
             snapshot["skills"]["items"][0]["compatibility"]["badge"]["emoji"], "🟢"
         )
         self.assertEqual(snapshot["skills"]["available"][0]["name"], "planner")
         self.assertEqual(
             snapshot["skills"]["available"][0]["compatibility"]["status"], "installable"
         )
+        self.assertEqual(
+            snapshot["modules"]["available"][0]["interoperability"]["level"], "opaque"
+        )
         self.assertEqual(snapshot["modules"]["available"][0]["name"], "docs-mcp")
         self.assertTrue(snapshot["modules"]["available"][0]["actions"]["read_only"])
         self.assertEqual(snapshot["kits"]["available"][0]["name"], "scheduler")
+        self.assertEqual(
+            snapshot["kits"]["available"][0]["interoperability"]["level"], "native"
+        )
         self.assertEqual(snapshot["kits"]["available"][0]["path"], "kits/scheduler")
         self.assertTrue(snapshot["kits"]["available"][0]["actions"]["can_install"])
         self.assertEqual(
@@ -298,6 +310,9 @@ class MarketplaceTests(unittest.TestCase):
         self.assertIn('id="openrouter-connect-button"', template)
         self.assertIn("redirect_to=%2Fdashboard", template)
         self.assertIn("fetch('/api/settings'", template)
+        self.assertIn("function renderInteroperabilityBadge(item)", template)
+        self.assertIn("function renderInteroperabilityMeta(item)", template)
+        self.assertIn("Adopción", template)
 
     def test_dashboard_renders_configured_active_personality(self):
         original_brain = web._brain

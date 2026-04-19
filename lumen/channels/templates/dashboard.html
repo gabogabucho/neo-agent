@@ -493,6 +493,9 @@
     .badge-status-installable { background: rgba(217,146,37,0.10); color: var(--lumen-warn); border-color: rgba(217,146,37,0.20); }
     .badge-status-partial  { background: rgba(255,138,122,0.12); color: var(--lumen-coral); border-color: rgba(255,138,122,0.25); }
     .badge-status-blocked  { background: rgba(217,76,76,0.10); color: var(--lumen-danger); border-color: rgba(217,76,76,0.20); }
+    .badge-interop-native  { background: rgba(47,158,110,0.08); color: var(--lumen-success); border-color: rgba(47,158,110,0.16); }
+    .badge-interop-adapted { background: rgba(91,125,255,0.10); color: var(--lumen-blue); border-color: rgba(91,125,255,0.18); }
+    .badge-interop-opaque  { background: rgba(88,92,108,0.10); color: var(--lumen-mute); border-color: rgba(88,92,108,0.20); }
 
     .tag-pills { display: flex; flex-wrap: wrap; gap: 4px; }
     .tag-pills .tag {
@@ -505,6 +508,17 @@
 
     .reason-warn { font-size: 11px; color: var(--lumen-coral); }
     .reason-error { font-size: 11px; color: var(--lumen-danger); }
+    .meta-stack { display: flex; flex-direction: column; gap: 6px; }
+    .meta-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--lumen-s-3);
+      font-size: 11px;
+      color: var(--lumen-mute);
+    }
+    .meta-label { text-transform: uppercase; letter-spacing: 0.04em; }
+    .meta-value { text-align: right; }
 
     .empty-block {
       background: var(--lumen-paper-2);
@@ -1214,6 +1228,19 @@
       return `<div class="tag-pills">${sources.map(s => `<span class="tag">${escapeHtml(s.label)}</span>`).join('')}</div>`;
     }
 
+    function renderInteroperabilityBadge(item) {
+      const interoperability = item.interoperability || {};
+      if (!interoperability.level) return '';
+      return `<span class="badge badge-interop-${escapeHtml(interoperability.level)}" title="${escapeHtml(interoperability.summary || '')}">${escapeHtml(interoperability.label || interoperability.level)}</span>`;
+    }
+
+    function renderInteroperabilityMeta(item) {
+      const interoperability = item.interoperability || {};
+      if (!interoperability.level) return '';
+      const installPath = interoperability.install_path || 'unknown';
+      return `<div class="meta-stack"><div class="meta-row"><span class="meta-label">Adopción</span><span class="meta-value">${renderInteroperabilityBadge(item)} via ${escapeHtml(installPath)}</span></div><div class="mod-meta">${escapeHtml(interoperability.summary || '')}</div></div>`;
+    }
+
     function renderReadOnlyCard(item, emptyLabel) {
       const reasons = item.compatibility?.reasons || [];
       const installBtn = item.actions?.can_install
@@ -1222,12 +1249,13 @@
         <div class="mod-card">
           <div class="mod-card-top">
             <div>
-              <h4>${escapeHtml(item.display_name || item.name)}<span class="badge">Skill</span></h4>
+              <h4>${escapeHtml(item.display_name || item.name)}<span class="badge">Skill</span>${renderInteroperabilityBadge(item)}</h4>
               <div class="mod-meta">${escapeHtml(item.min_capability || 'tier-1')} · ${item.installed ? 'instalado' : 'descubierto'}</div>
             </div>
             <div class="mod-actions">${renderCompatBadge(item)}${installBtn}</div>
           </div>
           <div class="mod-desc">${escapeHtml(item.description || emptyLabel)}</div>
+          ${renderInteroperabilityMeta(item)}
           ${renderSourcePills(item)}
           ${renderTagPills(item)}
           ${reasons.length ? `<div class="reason-error">${reasons.map(r => escapeHtml(r)).join(' • ')}</div>` : ''}
@@ -1251,7 +1279,7 @@
         <div class="mod-card ${personality ? 'is-personality' : ''}">
           <div class="mod-card-top">
             <div>
-              <h4>${escapeHtml(item.display_name || item.name)}${typeBadge}${personalityBadge}</h4>
+              <h4>${escapeHtml(item.display_name || item.name)}${typeBadge}${personalityBadge}${renderInteroperabilityBadge(item)}</h4>
               <div class="mod-meta">v${escapeHtml(item.version || '0.0.0')} · ${escapeHtml(item.min_capability || 'tier-1')} · ${item.installed ? 'instalado' : 'disponible'}</div>
             </div>
             <div class="mod-actions">
@@ -1260,6 +1288,7 @@
             </div>
           </div>
           <div class="mod-desc">${escapeHtml(item.description || 'Sin descripción.')}</div>
+          ${renderInteroperabilityMeta(item)}
           ${renderSourcePills(item)}
           ${renderTagPills(item)}
           ${warnings.length ? `<div class="reason-warn">${warnings.map(w => escapeHtml(w)).join(' • ')}</div>` : ''}

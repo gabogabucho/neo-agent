@@ -72,6 +72,7 @@ class ModuleManifestResolutionTests(unittest.TestCase):
         discovered = registry.get(CapabilityKind.MODULE, "module-native")
         self.assertIsNotNone(discovered)
         self.assertEqual(Path(discovered.metadata["manifest_path"]).name, "module.yaml")
+        self.assertEqual(discovered.metadata["interoperability"]["level"], "native")
         self.assertIsNone(registry.get(CapabilityKind.MODULE, "module-legacy"))
 
     def test_manifest_yaml_remains_supported_as_fallback(self):
@@ -115,6 +116,7 @@ class ModuleManifestResolutionTests(unittest.TestCase):
         self.assertEqual(
             Path(discovered.metadata["manifest_path"]).name, "manifest.yaml"
         )
+        self.assertEqual(discovered.metadata["interoperability"]["level"], "adapted")
 
     def test_installed_module_discovery_preserves_path_and_tags_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:

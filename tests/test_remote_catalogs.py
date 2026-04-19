@@ -133,6 +133,24 @@ def test_snapshot_integrates_mcp_registry_feed():
     assert "ac.inference.sh-mcp" in mcp_names
 
 
+def test_mcp_registry_remote_transport_is_marked_opaque_when_not_stdio():
+    market = _build_marketplace()
+    mcp_payload = _load_fixture("mcp_registry.json")
+
+    with patch.object(market, "_feed_configs", return_value=[
+        {
+            "name": "MCP Registry",
+            "url": "https://registry.modelcontextprotocol.io/v0/servers?limit=3",
+        }
+    ]):
+        with patch.object(market, "_fetch_json", return_value=mcp_payload):
+            snapshot = market.snapshot()
+
+    card = next(item for item in snapshot["modules"]["items"] if item["name"] == "ac.inference.sh-mcp")
+    assert card["interoperability"]["level"] == "opaque"
+    assert card["interoperability"]["install_path"] == "manual"
+
+
 def test_native_shape_still_works_for_back_compat():
     """A feed publishing the original {skills, mcps} shape must keep working."""
     market = _build_marketplace()

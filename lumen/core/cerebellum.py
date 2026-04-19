@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from lumen.core.connectors import ConnectorRegistry
+from lumen.core.interoperability import classify_interoperability
 from lumen.core.model_tiers import (
     MODEL_TIER_UNKNOWN,
     is_model_tier_below_minimum,
@@ -71,6 +72,11 @@ def normalize_agent_skill(
             "path": path,
             "level": frontmatter.get("level"),
             "min_capability": frontmatter.get("min_capability", "tier-1"),
+            "interoperability": classify_interoperability(
+                source_type="agent_skills",
+                metadata=frontmatter,
+                manifest_path=path,
+            ),
         },
     )
 
@@ -124,6 +130,11 @@ def normalize_openclaw_metadata(
             "activation": metadata.get("activation"),
             "min_capability": metadata.get("min_capability", "tier-1"),
             "metadata_keys": sorted(metadata.keys()),
+            "interoperability": classify_interoperability(
+                source_type="openclaw",
+                metadata=metadata,
+                manifest_path=path,
+            ),
         },
     )
 
@@ -133,6 +144,7 @@ def normalize_module_manifest(
     *,
     installed: bool = False,
     source_type: str = "module_manifest",
+    manifest_path: str | None = None,
 ) -> NormalizedArtifact:
     requires = normalize_requires(manifest)
     provides = _normalize_string_list(manifest.get("provides"))
@@ -153,6 +165,11 @@ def normalize_module_manifest(
             "path": manifest.get("path"),
             "tags": _normalize_string_list(manifest.get("tags")),
             "min_capability": manifest.get("min_capability", "tier-1"),
+            "interoperability": classify_interoperability(
+                source_type=source_type,
+                metadata=manifest,
+                manifest_path=manifest_path,
+            ),
             "schema_aliases": {
                 "skills_required": _normalize_string_list(
                     manifest.get("skills_required")

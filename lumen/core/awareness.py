@@ -74,6 +74,9 @@ class CapabilityAwareness:
         """Translate a capability event into an internal impression."""
         cap = event.capability
         if event.kind == "capability_discovered":
+            announce = event.announce_text()
+            if announce:
+                return f"I discovered {cap.name}, a possible new part of me. {announce}"
             return f"I discovered {cap.name}, a possible new part of me."
         if event.kind in {"capability_connected", "capability_integrated"}:
             return event.announce_text()

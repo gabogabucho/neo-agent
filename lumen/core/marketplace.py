@@ -28,6 +28,13 @@ from lumen.core.cerebellum import (
     normalize_requires,
 )
 from lumen.core.connectors import ConnectorRegistry
+from lumen.core.interoperability import (
+    INTEROP_ADAPTED,
+    INTEROP_NATIVE,
+    INTEROP_OPAQUE,
+    classify_capability_interoperability,
+    classify_interoperability,
+)
 from lumen.core.registry import Capability, CapabilityKind, Registry
 
 
@@ -265,6 +272,11 @@ class Marketplace:
             "provides": entry.get("provides", []),
             "requires": entry.get("requires", {}),
             "compatibility": compatibility,
+            "interoperability": classify_interoperability(
+                source_type="catalog_entry",
+                metadata=entry,
+                can_install=not installed,
+            ),
             "sources": [{"type": kind, "label": source_label}],
             "actions": {
                 "read_only": False,
@@ -317,6 +329,8 @@ class Marketplace:
             "provides": list(capability.provides),
             "requires": dict(capability.requires),
             "compatibility": compatibility,
+            "interoperability": capability.metadata.get("interoperability")
+            or classify_capability_interoperability(capability),
             "sources": [{"type": kind, "label": source_label}],
             "actions": {
                 "read_only": capability.kind
@@ -555,6 +569,12 @@ class Marketplace:
                 "install_spec": raw.get("install"),
                 "source_url": raw.get("source_url"),
                 "source_type": source_type,
+                "interoperability": classify_interoperability(
+                    source_type=source_type,
+                    metadata=raw,
+                    can_install=True,
+                    install_spec=raw.get("install"),
+                ),
             },
         )
 
@@ -615,6 +635,12 @@ class Marketplace:
                 "remote_transport": raw.get("remote_transport"),
                 "source_url": raw.get("source_url"),
                 "source_type": source_type,
+                "interoperability": classify_interoperability(
+                    source_type=source_type,
+                    metadata=raw,
+                    can_install=can_install,
+                    remote_transport=raw.get("remote_transport"),
+                ),
             },
         )
 
@@ -690,6 +716,9 @@ class Marketplace:
                     value = card.get(field)
                     if value not in (None, "", [], {}):
                         combined[field] = value
+                combined["interoperability"] = _prefer_interoperability(
+                    existing.get("interoperability"), card.get("interoperability")
+                )
                 combined["installed"] = card.get("installed", False) or existing.get(
                     "installed", False
                 )
@@ -891,3 +920,21 @@ def _dedupe_sources(values: list[dict[str, Any]]) -> list[dict[str, Any]]:
         seen.add(key)
         result.append(value)
     return result
+
+
+def _prefer_interoperability(
+    existing: dict[str, Any] | None, incoming: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    if incoming in (None, {}):
+        return existing
+    if existing in (None, {}):
+        return incoming
+
+    rank = {
+        INTEROP_NATIVE: 0,
+        INTEROP_ADAPTED: 1,
+        INTEROP_OPAQUE: 2,
+    }
+    existing_rank = rank.get(str(existing.get("level") or "").strip().lower(), -1)
+    incoming_rank = rank.get(str(incoming.get("level") or "").strip().lower(), -1)
+    return incoming if incoming_rank > existing_rank else existing
