@@ -295,6 +295,8 @@ class MarketplaceTests(unittest.TestCase):
             template.index('id="tab-skills"'),
         )
         self.assertIn('id="settings-form"', template)
+        self.assertIn('id="openrouter-connect-button"', template)
+        self.assertIn("redirect_to=%2Fdashboard", template)
         self.assertIn("fetch('/api/settings'", template)
 
     def test_dashboard_renders_configured_active_personality(self):
@@ -347,6 +349,7 @@ class MarketplaceTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("Demo Personality", response.text)
+        self.assertIn("Conectar OpenRouter", response.text)
 
     def test_dashboard_falls_back_to_runtime_personality_name_when_no_active_module(
         self,
@@ -399,6 +402,7 @@ class MarketplaceTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("Locale Lumen", response.text)
+        self.assertIn("id=\"openrouter-connect-button\"", response.text)
 
 
 if __name__ == "__main__":

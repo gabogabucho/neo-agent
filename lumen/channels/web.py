@@ -60,6 +60,7 @@ OPENROUTER_CURATED_MODELS = {
     "google/gemma-3-27b-it:free",
 }
 OPENROUTER_STATE_TTL_SECONDS = 600
+DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-chat:free"
 DEFAULT_QUICK_PERSONALITY = "x-lumen-personal"
 AUTH_COOKIE_NAME = "lumen_owner"
 SETUP_COOKIE_NAME = "lumen_setup"
@@ -338,6 +339,26 @@ def _infer_provider_name(config: dict | None = None) -> str:
     if ":free" in model or model.startswith("meta-") or model.startswith("google/"):
         return "OpenRouter"
     return "Custom"
+
+
+def _is_openrouter_model(model: str | None) -> bool:
+    return str(model or "").strip() in OPENROUTER_CURATED_MODELS
+
+
+def _openrouter_redirect_target(value: str | None = None) -> str:
+    target = str(value or "").strip()
+    if target == "/dashboard":
+        return "/dashboard?panel=config&openrouter=connected"
+    if target.startswith("/dashboard?"):
+        joiner = "&" if "?" in target else "?"
+        return f"{target}{joiner}openrouter=connected"
+    return "/"
+
+
+def _openrouter_error_redirect(target: str | None, normalized_error: str) -> str:
+    resolved = str(target or "").strip() or "/setup"
+    joiner = "&" if "?" in resolved else "?"
+    return f"{resolved}{joiner}oauth_error={normalized_error}"
 
 
 def _apply_config_api_key_env(config: dict, previous_config: dict | None = None) -> None:
@@ -986,8 +1007,18 @@ async def openrouter_oauth_start(
     port: int = 3000,
     entry_path: str | None = None,
     active_personality: str | None = None,
+    redirect_to: str | None = None,
 ):
     """Start a local-only OpenRouter PKCE flow."""
+    loaded = _load_config()
+    guard = (
+        _require_owner_access(request, loaded)
+        if _is_configured(loaded)
+        else _require_setup_access(request, loaded)
+    )
+    if guard is not None:
+        return guard
+
     if model not in OPENROUTER_CURATED_MODELS:
         return JSONResponse(
             status_code=400,
@@ -1008,6 +1039,7 @@ async def openrouter_oauth_start(
             "port": port,
             "entry_path": entry_path,
             "active_personality": active_personality,
+            "redirect_to": "/dashboard" if str(redirect_to or "").strip() == "/dashboard" else "/setup",
             "expires_at": time() + OPENROUTER_STATE_TTL_SECONDS,
         },
     )
@@ -1025,22 +1057,35 @@ async def openrouter_oauth_start(
 
 @app.get("/oauth/openrouter/callback", name="openrouter_oauth_callback")
 async def openrouter_oauth_callback(
+    request: Request,
     code: str | None = None,
     state: str | None = None,
     error: str | None = None,
 ):
     """Complete a local-only OpenRouter PKCE flow and save config."""
+    loaded = _load_config()
+    redirect_target = "/setup"
+
     if error:
         normalized = _normalize_openrouter_oauth_error(error=error)
-        return RedirectResponse(url=f"/setup?oauth_error={normalized}")
+        return RedirectResponse(url=_openrouter_error_redirect(redirect_target, normalized))
     if not code or not state:
         normalized = _normalize_openrouter_oauth_error(error="missing_code_or_state")
-        return RedirectResponse(url=f"/setup?oauth_error={normalized}")
+        return RedirectResponse(url=_openrouter_error_redirect(redirect_target, normalized))
 
     oauth_state = _pop_oauth_state(state)
     if not oauth_state:
         normalized = _normalize_openrouter_oauth_error(error="invalid_or_expired_state")
-        return RedirectResponse(url=f"/setup?oauth_error={normalized}")
+        return RedirectResponse(url=_openrouter_error_redirect(redirect_target, normalized))
+
+    redirect_target = str(oauth_state.get("redirect_to") or "/setup")
+    guard = (
+        _require_owner_access(request, loaded)
+        if _is_configured(loaded)
+        else _require_setup_access(request, loaded)
+    )
+    if guard is not None:
+        return guard
 
     try:
         api_key = _exchange_openrouter_code(code, oauth_state["code_verifier"])
@@ -1066,9 +1111,11 @@ async def openrouter_oauth_callback(
             await _brain.memory.init()
     except Exception as exc:
         normalized = _normalize_openrouter_oauth_error(exc=exc)
-        return RedirectResponse(url=f"/setup?oauth_error={normalized}")
+        return RedirectResponse(
+            url=_openrouter_error_redirect(redirect_target, normalized)
+        )
 
-    return RedirectResponse(url="/")
+    return RedirectResponse(url=_openrouter_redirect_target(redirect_target))
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -1092,6 +1139,11 @@ async def dashboard(request: Request):
             "model": _config.get("model", "not configured"),
             "api_key_env": _config.get("api_key_env", ""),
             "has_api_key": bool(_config.get("api_key")),
+            "openrouter_connected": _config.get("api_key_env") == "OPENROUTER_API_KEY"
+            and bool(_config.get("api_key")),
+            "openrouter_model": _config.get("model")
+            if _is_openrouter_model(_config.get("model"))
+            else DEFAULT_OPENROUTER_MODEL,
             "language": _config.get("language", "en"),
             "current_personality": _current_dashboard_personality(),
             "version": "0.1.0",

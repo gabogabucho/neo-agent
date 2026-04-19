@@ -548,6 +548,32 @@
       display: grid;
       gap: var(--lumen-s-4);
     }
+    .settings-provider-card {
+      display: grid;
+      gap: var(--lumen-s-3);
+    }
+    .settings-provider-head {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: var(--lumen-s-3);
+      align-items: center;
+    }
+    .settings-provider-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: var(--lumen-r-pill);
+      background: var(--lumen-paper-2);
+      color: var(--lumen-mute);
+    }
+    .settings-provider-status.connected {
+      background: rgba(47,158,110,0.12);
+      color: var(--lumen-success);
+    }
     .settings-grid {
       display: grid;
       gap: var(--lumen-s-3);
@@ -775,6 +801,29 @@
         <div class="l-card">
           <h3>{{ ui.config | default('Ajustes') }}</h3>
           <p style="margin-bottom:var(--lumen-s-4);">{{ ui.config_sub | default('Actualiza proveedor, modelo y credenciales sin volver a onboarding.') }}</p>
+          <div class="settings-provider-card" style="margin-bottom:var(--lumen-s-4);">
+            <div class="settings-provider-head">
+              <div>
+                <h3 style="margin-bottom:6px;">OpenRouter</h3>
+                <p style="color:var(--lumen-ink-soft);">Conectá o renová la autorización desde acá. Si preferís, abajo podés seguir editando provider/model/API key manualmente.</p>
+              </div>
+              <span id="openrouter-status-pill" class="settings-provider-status {{ 'connected' if openrouter_connected else '' }}">{{ 'Conectado' if openrouter_connected else 'No conectado' }}</span>
+            </div>
+            <div class="settings-grid">
+              <div class="field">
+                <label>Estado</label>
+                <p id="openrouter-connection-state">{{ 'Autorizado con OpenRouter' if openrouter_connected else 'Todavía no autorizado desde el dashboard' }}</p>
+              </div>
+              <div class="field">
+                <label>Modelo para conectar</label>
+                <p id="openrouter-model-display">{{ openrouter_model }}</p>
+              </div>
+            </div>
+            <div class="settings-actions">
+              <a id="openrouter-connect-button" class="l-btn" href="/oauth/openrouter/start?language={{ language }}&model={{ openrouter_model }}&port=3000&redirect_to=%2Fdashboard">{{ 'Reautorizar OpenRouter' if openrouter_connected else 'Conectar OpenRouter' }}</a>
+              <span style="font-size:12px;color:var(--lumen-mute);">Usa el flujo de autorización existente y vuelve a Ajustes cuando termina.</span>
+            </div>
+          </div>
           <form id="settings-form" class="settings-form">
             <div class="settings-grid">
               <div class="field">
@@ -915,7 +964,8 @@
       document.getElementById('topbar-sub').textContent = s;
       if (name === 'marketplace') loadMarketplace();
     }
-    showPanel('chat');
+    const dashboardQuery = new URLSearchParams(window.location.search);
+    showPanel(dashboardQuery.get('panel') || 'chat');
 
     // === WebSocket Chat ===
     const STORAGE_KEY = 'lumen_session_id';
@@ -936,6 +986,43 @@
     const typingIndicator = document.getElementById('typing-indicator');
     const settingsForm = document.getElementById('settings-form');
     const settingsMessage = document.getElementById('settings-message');
+    const openRouterButton = document.getElementById('openrouter-connect-button');
+    const openRouterStatusPill = document.getElementById('openrouter-status-pill');
+    const openRouterConnectionState = document.getElementById('openrouter-connection-state');
+    const openRouterModelDisplay = document.getElementById('openrouter-model-display');
+
+    function buildOpenRouterAuthUrl(model) {
+      const params = new URLSearchParams({
+        language: '{{ language }}',
+        model: model || '{{ openrouter_model }}',
+        port: String(parseInt(location.port, 10) || 3000),
+        redirect_to: '/dashboard',
+      });
+      return `/oauth/openrouter/start?${params.toString()}`;
+    }
+
+    function updateOpenRouterUi(config = {}) {
+      const provider = (config.provider || '').trim().toLowerCase();
+      const model = (config.model || '').trim();
+      const apiKeyEnv = (config.api_key_env || '').trim();
+      const curatedModel = model.includes(':free') ? model : '{{ openrouter_model }}';
+      const connected = provider === 'openrouter' && apiKeyEnv === 'OPENROUTER_API_KEY' && Boolean(config.has_api_key);
+
+      if (openRouterButton) {
+        openRouterButton.textContent = connected ? 'Reautorizar OpenRouter' : 'Conectar OpenRouter';
+        openRouterButton.href = buildOpenRouterAuthUrl(curatedModel);
+      }
+      if (openRouterStatusPill) {
+        openRouterStatusPill.textContent = connected ? 'Conectado' : 'No conectado';
+        openRouterStatusPill.classList.toggle('connected', connected);
+      }
+      if (openRouterConnectionState) {
+        openRouterConnectionState.textContent = connected ? 'Autorizado con OpenRouter' : 'Todavía no autorizado desde el dashboard';
+      }
+      if (openRouterModelDisplay) {
+        openRouterModelDisplay.textContent = curatedModel;
+      }
+    }
 
     async function loadHistory() {
       try {
@@ -1049,6 +1136,7 @@
         modelInput.value = payload.config.model || '';
         envInput.value = payload.config.api_key_env || '';
         apiKeyInput.value = '';
+        updateOpenRouterUi(payload.config);
         setSettingsMessage('{{ ui.settings_saved | default("Configuración actualizada. Lumen usará estos cambios en adelante.") }}', 'success');
       } catch (error) {
         setSettingsMessage(error.message || 'No se pudieron guardar los cambios.', 'error');
@@ -1056,6 +1144,21 @@
         submitBtn.disabled = false;
       }
     });
+
+    updateOpenRouterUi({
+      provider: '{{ provider }}',
+      model: '{{ model }}',
+      api_key_env: '{{ api_key_env }}',
+      has_api_key: {{ 'true' if has_api_key else 'false' }},
+    });
+
+    if (dashboardQuery.get('oauth_error')) {
+      showPanel('config');
+      setSettingsMessage('No se pudo completar la autorización con OpenRouter. Probá de nuevo.', 'error');
+    } else if (dashboardQuery.get('openrouter') === 'connected') {
+      showPanel('config');
+      setSettingsMessage('OpenRouter quedó conectado y listo para usar.', 'success');
+    }
 
     // === Marketplace ===
     let marketplaceState = null;

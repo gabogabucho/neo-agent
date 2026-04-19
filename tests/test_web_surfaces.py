@@ -401,6 +401,75 @@ class WebSurfaceTests(unittest.TestCase):
 
         self.assertEqual(allowed.status_code, 200)
 
+    def test_openrouter_oauth_routes_require_setup_or_owner_auth_in_serve_mode(self):
+        web.configure_access_mode("serve")
+
+        token = web.ensure_server_bootstrap(host="0.0.0.0", port=3000)
+        denied_setup = self.client.get(
+            "/oauth/openrouter/start",
+            params={"model": "deepseek/deepseek-chat:free"},
+        )
+        self.assertEqual(denied_setup.status_code, 401)
+
+        unlocked = self.client.post("/api/setup/token", json={"token": token})
+        self.assertEqual(unlocked.status_code, 200)
+
+        allowed_setup = self.client.get(
+            "/oauth/openrouter/start",
+            params={"model": "deepseek/deepseek-chat:free"},
+            follow_redirects=False,
+        )
+        self.assertEqual(allowed_setup.status_code, 307)
+
+        config = {
+            "provider": "OpenRouter",
+            "model": "deepseek/deepseek-chat:free",
+            "language": "en",
+            "server_mode": True,
+            "server_secret": "test-server-secret",
+            "owner_secret_hash": web._hash_secret("2468"),
+        }
+        web.CONFIG_PATH.write_text(yaml.dump(config), encoding="utf-8")
+        web._config = dict(config)
+        web._oauth_state_store["state-protected"] = {
+            "code_verifier": "verifier-protected",
+            "model": "deepseek/deepseek-chat:free",
+            "language": "en",
+            "port": 3000,
+            "redirect_to": "/dashboard",
+            "expires_at": 9999999999,
+        }
+
+        denied_owner = self.client.get(
+            "/oauth/openrouter/callback",
+            params={"code": "code-protected", "state": "state-protected"},
+        )
+        self.assertEqual(denied_owner.status_code, 401)
+
+        login = self.client.post("/api/login", json={"secret": "2468"})
+        self.assertEqual(login.status_code, 200)
+
+        web._oauth_state_store["state-protected-2"] = {
+            "code_verifier": "verifier-protected-2",
+            "model": "deepseek/deepseek-chat:free",
+            "language": "en",
+            "port": 3000,
+            "redirect_to": "/dashboard",
+            "expires_at": 9999999999,
+        }
+
+        with (
+            patch.object(web, "_exchange_openrouter_code", return_value="or-key-protected"),
+            patch.object(web, "_init_brain_from_config", _noop),
+        ):
+            allowed_owner = self.client.get(
+                "/oauth/openrouter/callback",
+                params={"code": "code-protected", "state": "state-protected-2"},
+                follow_redirects=False,
+            )
+
+        self.assertEqual(allowed_owner.status_code, 307)
+
 
 class SessionManagerTests(unittest.TestCase):
     def test_get_or_create_sets_last_seen_and_reuses_session(self):

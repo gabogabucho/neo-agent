@@ -75,7 +75,24 @@ class OpenRouterOAuthTests(unittest.TestCase):
         self.assertEqual(stored["language"], "es")
         self.assertEqual(stored["model"], "deepseek/deepseek-chat:free")
         self.assertEqual(stored["port"], 4312)
+        self.assertEqual(stored["redirect_to"], "/setup")
         self.assertTrue(stored["code_verifier"])
+
+    def test_openrouter_start_accepts_dashboard_redirect_target(self):
+        response = self.client.get(
+            "/oauth/openrouter/start",
+            params={
+                "language": "en",
+                "model": "deepseek/deepseek-chat:free",
+                "redirect_to": "/dashboard",
+            },
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 307)
+        location = response.headers["location"]
+        state = parse_qs(urlparse(location).query)["state"][0]
+        self.assertEqual(web._oauth_state_store[state]["redirect_to"], "/dashboard")
 
     def test_openrouter_callback_merge_saves_config(self):
         web.CONFIG_PATH.write_text(
@@ -122,6 +139,31 @@ class OpenRouterOAuthTests(unittest.TestCase):
         self.assertEqual(config["api_key_env"], "OPENROUTER_API_KEY")
         self.assertEqual(config["mcp"], {"servers": {"x": {}}})
         self.assertNotIn("state-123", web._oauth_state_store)
+
+    def test_openrouter_callback_redirects_back_to_dashboard_when_requested(self):
+        web._oauth_state_store["state-dashboard"] = {
+            "code_verifier": "verifier-dashboard",
+            "model": "deepseek/deepseek-chat:free",
+            "language": "en",
+            "port": 3000,
+            "redirect_to": "/dashboard",
+            "expires_at": 9999999999,
+        }
+
+        with (
+            patch.object(web, "_exchange_openrouter_code", return_value="or-key-dashboard"),
+            patch.object(web, "_init_brain_from_config", _noop_init_brain),
+        ):
+            response = self.client.get(
+                "/oauth/openrouter/callback",
+                params={"code": "code-dashboard", "state": "state-dashboard"},
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 307)
+        self.assertEqual(
+            response.headers["location"], "/dashboard?panel=config&openrouter=connected"
+        )
 
     def test_openrouter_callback_normalizes_canceled_auth_error(self):
         response = self.client.get(
@@ -183,6 +225,32 @@ class OpenRouterOAuthTests(unittest.TestCase):
         self.assertEqual(response.status_code, 307)
         self.assertEqual(
             response.headers["location"], "/setup?oauth_error=exchange_failed"
+        )
+
+    def test_openrouter_callback_redirects_dashboard_errors_back_to_dashboard(self):
+        web._oauth_state_store["state-err-dashboard"] = {
+            "code_verifier": "verifier-err-dashboard",
+            "model": "deepseek/deepseek-chat:free",
+            "language": "en",
+            "port": 3000,
+            "redirect_to": "/dashboard",
+            "expires_at": 9999999999,
+        }
+
+        with patch.object(
+            web,
+            "_exchange_openrouter_code",
+            side_effect=RuntimeError("OpenRouter key exchange failed: network error"),
+        ):
+            response = self.client.get(
+                "/oauth/openrouter/callback",
+                params={"code": "code-123", "state": "state-err-dashboard"},
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 307)
+        self.assertEqual(
+            response.headers["location"], "/dashboard?oauth_error=exchange_failed"
         )
 
     def test_api_setup_merge_preserves_unrelated_config(self):
