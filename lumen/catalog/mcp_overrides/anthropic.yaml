@@ -1,0 +1,11 @@
+display_name: "Anthropic API"
+doc_url: "https://docs.anthropic.com/en/api/getting-started"
+env:
+  - name: ANTHROPIC_API_KEY
+    label: "Anthropic API key"
+    hint: "Copiala desde https://console.anthropic.com/ (Settings → API Keys)."
+    secret: true
+    pattern: "sk-ant-[A-Za-z0-9_-]{20,}"
+    format_guidance: "Empieza con `sk-ant-`."
+    examples:
+      - "sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKl"

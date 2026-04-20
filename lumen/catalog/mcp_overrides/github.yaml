@@ -1,0 +1,11 @@
+display_name: "GitHub"
+doc_url: "https://github.com/github/github-mcp-server"
+env:
+  - name: GITHUB_PERSONAL_ACCESS_TOKEN
+    label: "GitHub personal access token"
+    hint: "Generá uno en https://github.com/settings/tokens (fine-grained recomendado)."
+    secret: true
+    pattern: "(ghp_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{80,})"
+    format_guidance: "Empieza con `ghp_` (classic) o `github_pat_` (fine-grained)."
+    examples:
+      - "ghp_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"

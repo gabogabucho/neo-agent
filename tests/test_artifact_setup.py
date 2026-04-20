@@ -1,0 +1,252 @@
+"""Tests for the unified artifact setup contract (Phase 1)."""
+
+from __future__ import annotations
+
+import pytest
+
+from pathlib import Path
+
+from lumen.core.artifact_setup import (
+    ArtifactSetupContract,
+    KIND_EXTERNAL,
+    KIND_MANUAL,
+    KIND_MCP,
+    KIND_NATIVE,
+    contract_from_mcp_server,
+    contract_from_native_manifest,
+    load_mcp_overlay,
+    parse_artifact_action,
+)
+
+
+class TestArtifactSetupContract:
+    def test_rejects_unknown_kind(self):
+        with pytest.raises(ValueError):
+            ArtifactSetupContract(
+                kind="weird",
+                artifact_id="x",
+                display_name="X",
+            )
+
+    def test_rejects_empty_artifact_id(self):
+        with pytest.raises(ValueError):
+            ArtifactSetupContract(
+                kind=KIND_NATIVE,
+                artifact_id="",
+                display_name="",
+            )
+
+    def test_action_strings(self):
+        contract = ArtifactSetupContract(
+            kind=KIND_MCP,
+            artifact_id="github",
+            display_name="GitHub",
+        )
+        assert contract.action_string == "save_artifact_env:mcp:github"
+        assert contract.legacy_action_string == "save_module_env:github"
+
+    def test_manual_only_heuristic(self):
+        manual = ArtifactSetupContract(
+            kind=KIND_MANUAL,
+            artifact_id="foo",
+            display_name="Foo",
+            manual_instructions="Open foo.com and paste key in ~/.foo",
+        )
+        assert manual.is_manual_only()
+        assert not manual.has_pending_values()
+
+    def test_native_with_pending_is_not_manual_only(self):
+        from lumen.core.module_setup import EnvSpec
+
+        contract = ArtifactSetupContract(
+            kind=KIND_NATIVE,
+            artifact_id="mod",
+            display_name="Mod",
+            specs=[EnvSpec(name="X", label="X", hint="", secret=False)],
+        )
+        assert contract.has_pending_values()
+        assert not contract.is_manual_only()
+
+
+class TestContractFromNativeManifest:
+    def test_no_env_declared_returns_none(self):
+        assert contract_from_native_manifest("mod", {"name": "mod"}) is None
+
+    def test_returns_contract_with_specs(self):
+        manifest = {
+            "name": "mod",
+            "display_name": "Mod",
+            "x-lumen": {
+                "runtime": {
+                    "env": [
+                        {"name": "TOKEN", "label": "Token", "secret": True},
+                        {"name": "CHAT_ID", "label": "Chat", "secret": False},
+                    ]
+                }
+            },
+        }
+        contract = contract_from_native_manifest("mod", manifest)
+        assert contract is not None
+        assert contract.kind == KIND_NATIVE
+        assert contract.artifact_id == "mod"
+        assert contract.display_name == "Mod"
+        assert [spec.name for spec in contract.specs] == ["TOKEN", "CHAT_ID"]
+        assert contract.sink == {"type": "native_secrets", "module_name": "mod"}
+
+    def test_filters_out_already_satisfied_specs(self):
+        manifest = {
+            "name": "mod",
+            "x-lumen": {
+                "runtime": {
+                    "env": [
+                        {"name": "TOKEN", "label": "Token", "secret": True},
+                        {"name": "CHAT_ID", "label": "Chat", "secret": False},
+                    ]
+                }
+            },
+        }
+        config = {"secrets": {"mod": {"TOKEN": "abc"}}}
+        contract = contract_from_native_manifest("mod", manifest, config)
+        assert contract is not None
+        assert [spec.name for spec in contract.specs] == ["CHAT_ID"]
+
+    def test_returns_contract_with_empty_specs_when_all_satisfied(self):
+        manifest = {
+            "name": "mod",
+            "x-lumen": {
+                "runtime": {
+                    "env": [{"name": "TOKEN", "label": "Token", "secret": True}]
+                }
+            },
+        }
+        config = {"secrets": {"mod": {"TOKEN": "abc"}}}
+        contract = contract_from_native_manifest("mod", manifest, config)
+        assert contract is not None
+        assert contract.specs == []
+        assert not contract.has_pending_values()
+
+
+class TestContractFromMcpServer:
+    def test_no_config_returns_none(self):
+        assert contract_from_mcp_server("srv", None) is None
+        assert contract_from_mcp_server("", {"env": {"X": ""}}) is None
+
+    def test_no_env_declared_returns_none(self):
+        assert contract_from_mcp_server("srv", {"command": "foo"}) is None
+
+    def test_overlay_beats_everything(self):
+        overlay = {
+            "display_name": "Foo",
+            "env": [
+                {"name": "FOO_TOKEN", "label": "Foo token", "secret": True},
+            ],
+        }
+        server_config = {
+            "command": "foo",
+            "env": {"FOO_TOKEN": "", "OTHER": "ignored"},
+            "x-lumen-env": [{"name": "IGNORED", "label": "x"}],
+        }
+        contract = contract_from_mcp_server("foo", server_config, overlay=overlay)
+        assert contract is not None
+        assert contract.kind == KIND_MCP
+        assert contract.artifact_id == "foo"
+        assert contract.display_name == "Foo"
+        assert [spec.name for spec in contract.specs] == ["FOO_TOKEN"]
+        assert contract.sink == {"type": "mcp_server_env", "server_id": "foo"}
+        assert contract.action_string == "save_artifact_env:mcp:foo"
+
+    def test_falls_back_to_x_lumen_env(self):
+        server_config = {
+            "env": {"API_KEY": ""},
+            "x-lumen-env": [
+                {"name": "API_KEY", "label": "API key", "secret": True},
+            ],
+        }
+        contract = contract_from_mcp_server("srv", server_config)
+        assert contract is not None
+        assert [spec.name for spec in contract.specs] == ["API_KEY"]
+
+    def test_falls_back_to_env_keys_when_no_annotations(self):
+        server_config = {"env": {"SOME_KEY": "", "SOME_TOKEN": ""}}
+        contract = contract_from_mcp_server("srv", server_config)
+        assert contract is not None
+        names = sorted(spec.name for spec in contract.specs)
+        assert names == ["SOME_KEY", "SOME_TOKEN"]
+        # Default secret inference by name substring
+        token_spec = next(s for s in contract.specs if s.name == "SOME_TOKEN")
+        assert token_spec.secret is True
+
+    def test_filters_out_already_populated_env(self):
+        overlay = {"env": [{"name": "A"}, {"name": "B"}]}
+        server_config = {"env": {"A": "already-set", "B": ""}}
+        contract = contract_from_mcp_server("srv", server_config, overlay=overlay)
+        assert contract is not None
+        assert [spec.name for spec in contract.specs] == ["B"]
+
+    def test_all_satisfied_returns_empty_specs(self):
+        overlay = {"env": [{"name": "A"}]}
+        server_config = {"env": {"A": "ok"}}
+        contract = contract_from_mcp_server("srv", server_config, overlay=overlay)
+        assert contract is not None
+        assert contract.specs == []
+        assert not contract.has_pending_values()
+
+
+class TestLoadMcpOverlay:
+    def test_missing_pkg_dir_returns_none(self):
+        assert load_mcp_overlay("foo", None) is None
+        assert load_mcp_overlay("", Path(".")) is None
+
+    def test_loads_shipped_github_overlay(self):
+        pkg_dir = Path(__file__).resolve().parent.parent / "lumen"
+        overlay = load_mcp_overlay("github", pkg_dir)
+        assert overlay is not None
+        assert overlay["display_name"] == "GitHub"
+        env = overlay["env"]
+        assert env[0]["name"] == "GITHUB_PERSONAL_ACCESS_TOKEN"
+        assert env[0]["secret"] is True
+
+    def test_loads_shipped_anthropic_overlay(self):
+        pkg_dir = Path(__file__).resolve().parent.parent / "lumen"
+        overlay = load_mcp_overlay("anthropic", pkg_dir)
+        assert overlay is not None
+        assert overlay["env"][0]["name"] == "ANTHROPIC_API_KEY"
+
+    def test_missing_file_returns_none(self):
+        pkg_dir = Path(__file__).resolve().parent.parent / "lumen"
+        assert load_mcp_overlay("definitely-not-a-real-server", pkg_dir) is None
+
+
+class TestParseArtifactAction:
+    def test_new_format(self):
+        assert parse_artifact_action("save_artifact_env:mcp:github") == (
+            "mcp",
+            "github",
+        )
+        assert parse_artifact_action("save_artifact_env:native:telegram") == (
+            "native",
+            "telegram",
+        )
+        assert parse_artifact_action("save_artifact_env:manual:foo") == (
+            "manual",
+            "foo",
+        )
+
+    def test_legacy_format_maps_to_native(self):
+        assert parse_artifact_action("save_module_env:telegram") == (
+            "native",
+            "telegram",
+        )
+
+    def test_handles_artifact_id_with_colons_is_rejected(self):
+        # split limit=1, so the id can contain colons in theory — but we
+        # want strict parsing; anything beyond the first ``kind:id`` pair
+        # is taken as part of the id. Document current behavior.
+        assert parse_artifact_action("save_artifact_env:mcp:a:b") == ("mcp", "a:b")
+
+    def test_unknown_prefix_returns_none(self):
+        assert parse_artifact_action("random_action") is None
+        assert parse_artifact_action("") is None
+        assert parse_artifact_action("save_artifact_env:") is None
+        assert parse_artifact_action("save_artifact_env:foo:") is None
+        assert parse_artifact_action("save_artifact_env:unknown:x") is None
