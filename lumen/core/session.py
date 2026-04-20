@@ -17,6 +17,8 @@ class Session:
     history: list[dict] = field(default_factory=list)
     active_flow: dict | None = None
     slots: dict[str, Any] = field(default_factory=dict)
+    flow_prompted: bool = False
+    pending_setup_offer: dict[str, Any] | None = None
     last_seen: float = field(default_factory=time.time)
 
     def touch(self):
@@ -28,6 +30,8 @@ class Session:
     def start_flow(self, flow: dict):
         self.active_flow = flow
         self.slots = {}
+        self.flow_prompted = False
+        self.pending_setup_offer = None
 
     def fill_slot(self, name: str, value: Any):
         self.slots[name] = value
@@ -46,6 +50,8 @@ class Session:
     def complete_flow(self):
         self.active_flow = None
         self.slots = {}
+        self.flow_prompted = False
+        self.pending_setup_offer = None
 
 
 class SessionManager:

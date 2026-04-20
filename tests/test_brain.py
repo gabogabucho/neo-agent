@@ -139,6 +139,28 @@ def _mock_tool_call(name, arguments="{}"):
 
 
 class TestThinkHappyPath:
+    def test_prompt_prefers_obvious_user_spanish_over_english_config(self):
+        brain = _make_brain(language="en")
+        session = Session()
+        context = {
+            "consciousness": "I am Lumen",
+            "personality": "assistant",
+            "body": "capabilities",
+            "catalog": "",
+            "active_flow": None,
+            "filled_slots": {},
+            "pending_slots": [],
+            "memories": [],
+            "available_flows": [],
+        }
+
+        messages = brain._build_prompt(context, "Hola, ¿me ayudas con Telegram?", session)
+        system_msg = messages[0]["content"]
+
+        assert "follow the user's actual language" in system_msg
+        assert "Respond in Spanish" in system_msg
+        assert "Default locale hint: Respond in English." in system_msg
+
     @pytest.mark.asyncio
     async def test_think_returns_message_and_empty_tool_calls(self):
         brain = _make_brain()
@@ -592,6 +614,234 @@ class TestMatchFlowTrigger:
         assert session.active_flow is not None
         assert session.active_flow["intent"] == "order"
 
+    @pytest.mark.asyncio
+    async def test_module_setup_flow_runs_without_llm_and_redacts_secret_history(self):
+        handler = AsyncMock(
+            return_value={
+                "status": "ok",
+                "message": "Listo, pending-module ya quedó listo para usar.",
+            }
+        )
+        brain = _make_brain(
+            flows=[
+                {
+                    "intent": "module-setup-pending-module",
+                    "triggers": ["setup:pending-module"],
+                    "slots": {
+                        "DEMO_TOKEN": {
+                            "required": True,
+                            "secret": True,
+                            "ask": "Token del demo",
+                        },
+                        "DEMO_CHAT_ID": {
+                            "required": True,
+                            "secret": False,
+                            "ask": "Chat ID",
+                        },
+                    },
+                    "on_complete": "save_module_env:pending-module",
+                    "first_message": "Necesito unos datos.",
+                }
+            ],
+            flow_action_handler=handler,
+        )
+        brain.memory.recall = AsyncMock(return_value=[])
+        brain.memory.save_conversation_turn = AsyncMock()
+
+        session = Session()
+
+        with patch("lumen.core.brain.acompletion") as mock_llm:
+            first = await brain.think("setup:pending-module", session)
+            second = await brain.think("super-secret-token", session)
+            third = await brain.think("chat-123", session)
+
+        mock_llm.assert_not_called()
+        assert "Necesito unos datos" in first["message"]
+        assert "Token del demo" in first["message"]
+        assert second["message"] == "Listo.\n\nChat ID"
+        assert third["message"] == "Listo, pending-module ya quedó listo para usar."
+        handler.assert_awaited_once_with(
+            "save_module_env:pending-module",
+            {"DEMO_TOKEN": "super-secret-token", "DEMO_CHAT_ID": "chat-123"},
+            session=session,
+        )
+        assert session.active_flow is None
+        assert session.history[2] == {"role": "user", "content": "[secret:DEMO_TOKEN]"}
+        assert session.history[4] == {"role": "user", "content": "chat-123"}
+        brain.memory.save_conversation_turn.assert_any_await(
+            session.session_id,
+            "user",
+            "[secret:DEMO_TOKEN]",
+        )
+
+    @pytest.mark.asyncio
+    async def test_single_pending_setup_offer_starts_flow_on_affirmative_reply(self):
+        brain = _make_brain(
+            flows=[
+                {
+                    "intent": "module-setup-telegram",
+                    "triggers": ["setup:telegram"],
+                    "slots": {
+                        "TELEGRAM_TOKEN": {
+                            "required": True,
+                            "secret": True,
+                            "ask": "Telegram token",
+                        },
+                    },
+                    "on_complete": "save_module_env:telegram",
+                    "first_message": "Necesito un dato para Telegram.",
+                }
+            ]
+        )
+        brain.memory.recall = AsyncMock(return_value=[])
+        brain.memory.save_conversation_turn = AsyncMock()
+
+        session = Session()
+
+        with patch("lumen.core.brain.acompletion") as mock_llm:
+            mock_llm.return_value = _mock_llm_response(
+                "I have Telegram but it still needs configuration. Want to configure it now?"
+            )
+
+            first = await brain.think("what changed?", session)
+            second = await brain.think("sí", session)
+
+        assert first["message"].endswith("Want to configure it now?")
+        assert second["message"] == "Necesito un dato para Telegram.\n\nTelegram token"
+        assert session.active_flow is not None
+        assert session.active_flow["intent"] == "module-setup-telegram"
+        assert mock_llm.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_multiple_pending_setup_offer_does_not_guess_on_affirmative_reply(self):
+        brain = _make_brain(
+            flows=[
+                {
+                    "intent": "module-setup-telegram",
+                    "triggers": ["setup:telegram"],
+                    "slots": {"TELEGRAM_TOKEN": {"required": True, "ask": "Telegram token"}},
+                    "on_complete": "save_module_env:telegram",
+                    "first_message": "Telegram setup.",
+                },
+                {
+                    "intent": "module-setup-slack",
+                    "triggers": ["setup:slack"],
+                    "slots": {"SLACK_TOKEN": {"required": True, "ask": "Slack token"}},
+                    "on_complete": "save_module_env:slack",
+                    "first_message": "Slack setup.",
+                },
+            ]
+        )
+        brain.memory.recall = AsyncMock(return_value=[])
+        brain.memory.save_conversation_turn = AsyncMock()
+
+        session = Session()
+
+        with patch("lumen.core.brain.acompletion") as mock_llm:
+            mock_llm.return_value = _mock_llm_response(
+                "I have Telegram and Slack, but they still need configuration. Want to configure one now?"
+            )
+
+            await brain.think("what changed?", session)
+            second = await brain.think("dale", session)
+
+        assert "telegram, slack" in second["message"].lower()
+        assert "setup:<módulo>" in second["message"]
+        assert session.active_flow is None
+        assert mock_llm.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_greeting_does_not_continue_pending_setup_offer(self):
+        brain = _make_brain(
+            flows=[
+                {
+                    "intent": "module-setup-telegram",
+                    "triggers": ["setup:telegram"],
+                    "slots": {"TELEGRAM_TOKEN": {"required": True, "ask": "Telegram token"}},
+                    "on_complete": "save_module_env:telegram",
+                    "first_message": "Telegram setup.",
+                }
+            ]
+        )
+        brain.memory.recall = AsyncMock(return_value=[])
+        brain.memory.save_conversation_turn = AsyncMock()
+
+        session = Session()
+
+        with patch("lumen.core.brain.acompletion") as mock_llm:
+            mock_llm.side_effect = [
+                _mock_llm_response(
+                    "I have Telegram but it still needs configuration. Want to configure it now?"
+                ),
+                _mock_llm_response("¡Buenas! ¿En qué te ayudo?"),
+            ]
+
+            first = await brain.think("what changed?", session)
+            second = await brain.think("Buenas", session)
+
+        assert first["message"].endswith("Want to configure it now?")
+        assert second["message"] == "¡Buenas! ¿En qué te ayudo?"
+        assert session.active_flow is None
+        assert session.pending_setup_offer is None
+        assert mock_llm.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_pending_setup_offer_starts_flow_on_explicit_module_request(self):
+        brain = _make_brain(
+            flows=[
+                {
+                    "intent": "module-setup-telegram",
+                    "triggers": ["setup:telegram"],
+                    "slots": {"TELEGRAM_TOKEN": {"required": True, "ask": "Telegram token"}},
+                    "on_complete": "save_module_env:telegram",
+                    "first_message": "Telegram setup.",
+                }
+            ]
+        )
+        brain.memory.recall = AsyncMock(return_value=[])
+        brain.memory.save_conversation_turn = AsyncMock()
+
+        session = Session()
+
+        with patch("lumen.core.brain.acompletion") as mock_llm:
+            mock_llm.return_value = _mock_llm_response(
+                "I have Telegram but it still needs configuration. Want to configure it now?"
+            )
+
+            await brain.think("what changed?", session)
+            second = await brain.think("quiero configurar telegram", session)
+
+        assert second["message"] == "Telegram setup.\n\nTelegram token"
+        assert session.active_flow is not None
+        assert session.active_flow["intent"] == "module-setup-telegram"
+        assert mock_llm.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_explicit_setup_trigger_still_works_with_pending_setup_offer(self):
+        brain = _make_brain(
+            flows=[
+                {
+                    "intent": "module-setup-telegram",
+                    "triggers": ["setup:telegram"],
+                    "slots": {"TELEGRAM_TOKEN": {"required": True, "ask": "Telegram token"}},
+                    "on_complete": "save_module_env:telegram",
+                    "first_message": "Telegram setup.",
+                }
+            ]
+        )
+        brain.memory.recall = AsyncMock(return_value=[])
+        brain.memory.save_conversation_turn = AsyncMock()
+
+        session = Session(pending_setup_offer={"modules": ["telegram"]})
+
+        with patch("lumen.core.brain.acompletion") as mock_llm:
+            second = await brain.think("setup:telegram", session)
+
+        assert second["message"] == "Telegram setup.\n\nTelegram token"
+        assert session.active_flow is not None
+        assert session.active_flow["intent"] == "module-setup-telegram"
+        mock_llm.assert_not_called()
+
 
 # ── _build_prompt ────────────────────────────────────────────────────
 
@@ -687,6 +937,152 @@ class TestBuildPrompt:
         assert messages[1]["content"] == "previous message"
         assert messages[2]["content"] == "previous reply"
         assert messages[-1]["content"] == "new message"
+
+    def test_registry_context_separates_ready_and_not_ready_capabilities_generically(self):
+        registry = Registry()
+        registry.register(
+            Capability(
+                kind=CapabilityKind.SKILL,
+                name="faq",
+                description="Answers common questions",
+                status=CapabilityStatus.READY,
+            )
+        )
+        registry.register(
+            Capability(
+                kind=CapabilityKind.MODULE,
+                name="demo-bridge",
+                description="Connects to a generic external bridge",
+                status=CapabilityStatus.AVAILABLE,
+                metadata={
+                    "display_name": "Demo Bridge",
+                    "pending_setup": {
+                        "module": "demo-bridge",
+                        "env_specs": [{"name": "DEMO_API_KEY", "secret": True}],
+                    },
+                },
+            )
+        )
+        registry.register(
+            Capability(
+                kind=CapabilityKind.MODULE,
+                name="broken-sync",
+                description="Synchronizes a generic workspace",
+                status=CapabilityStatus.ERROR,
+                metadata={
+                    "display_name": "Broken Sync",
+                    "error": "Handshake failed",
+                },
+            )
+        )
+        registry.register(
+            Capability(
+                kind=CapabilityKind.MCP,
+                name="docs-index",
+                description="Indexes generic docs",
+                status=CapabilityStatus.MISSING_DEPS,
+                metadata={"display_name": "Docs Index"},
+            )
+        )
+
+        body = registry.as_context()
+
+        assert "### What I CAN do (READY — use immediately)" in body
+        assert "Answers common questions" in body
+        assert "### Installed but NOT ready yet (do not present as usable)" in body
+        assert "Installed or present is NOT the same as ready." in body
+        assert "Demo Bridge" in body
+        assert "DEMO_API_KEY" in body
+        assert "present in my body, but NOT READY [available]" in body
+        assert "Broken Sync" in body
+        assert "currently failing with an error: Handshake failed" in body
+        assert "Docs Index" in body
+        assert "present in my body, but NOT READY [missing deps]" in body
+        assert "missing required dependencies before it can work" in body
+
+    def test_prompt_surfaces_installed_but_not_ready_module_truthfully(self):
+        registry = Registry()
+        registry.register(
+            Capability(
+                kind=CapabilityKind.MODULE,
+                name="demo-bridge",
+                description="Generic communication bridge",
+                status=CapabilityStatus.AVAILABLE,
+                metadata={
+                    "display_name": "Demo Bridge",
+                    "pending_setup": {
+                        "module": "demo-bridge",
+                        "env_specs": [
+                            {
+                                "name": "DEMO_API_KEY",
+                                "label": "Demo API key",
+                                "secret": True,
+                            }
+                        ],
+                    },
+                },
+            )
+        )
+        brain = _make_brain(registry=registry)
+        session = Session()
+        context = {
+            "consciousness": "I am Lumen",
+            "personality": "assistant",
+            "body": registry.as_context(),
+            "catalog": "",
+            "active_flow": None,
+            "filled_slots": {},
+            "pending_slots": [],
+            "memories": [],
+            "available_flows": [],
+        }
+
+        messages = brain._build_prompt(context, "can you use the demo bridge?", session)
+        system_msg = messages[0]["content"]
+
+        assert "Installed but NOT ready yet" in system_msg
+        assert "Demo Bridge" in system_msg
+        assert "present in my body, but NOT READY [available]" in system_msg
+        assert "DEMO_API_KEY" in system_msg
+        assert "Installed or present is NOT the same as ready." in system_msg
+        assert "Truthfulness about readiness is more important than the fact that something is installed." in system_msg
+
+    def test_prompt_surfaces_degraded_installed_module_as_not_ready(self):
+        registry = Registry()
+        registry.register(
+            Capability(
+                kind=CapabilityKind.MODULE,
+                name="broken-sync",
+                description="Generic synchronization bridge",
+                status=CapabilityStatus.ERROR,
+                metadata={
+                    "display_name": "Broken Sync",
+                    "error": "Connector handshake failed",
+                },
+            )
+        )
+        brain = _make_brain(registry=registry)
+        session = Session()
+        context = {
+            "consciousness": "I am Lumen",
+            "personality": "assistant",
+            "body": registry.as_context(),
+            "catalog": "",
+            "active_flow": None,
+            "filled_slots": {},
+            "pending_slots": [],
+            "memories": [],
+            "available_flows": [],
+        }
+
+        messages = brain._build_prompt(context, "what can you do?", session)
+        system_msg = messages[0]["content"]
+
+        assert "Installed but NOT ready yet" in system_msg
+        assert "Broken Sync" in system_msg
+        assert "Connector handshake failed" in system_msg
+        assert "do not present as usable" in system_msg
+        assert "Never present a non-ready capability as usable, available now, or already working." in system_msg
 
 
 # ── SessionManager ───────────────────────────────────────────────────
