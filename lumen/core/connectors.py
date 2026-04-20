@@ -49,6 +49,16 @@ class ConnectorRegistry:
         self._connectors: dict[str, Connector] = {}
         self._tool_schemas: dict[str, dict] = {}
         self._explicit_tools: dict[str, dict[str, Any]] = {}
+        self._tool_name_map: dict[str, str] = {}
+
+    @staticmethod
+    def _sanitize_tool_name(name: str) -> str:
+        """Sanitize tool name for providers requiring ^[a-zA-Z0-9_-]+$ (e.g. OpenAI)."""
+        return name.replace(".", "__")
+
+    def _resolve_tool_name(self, name: str) -> str:
+        """Resolve a possibly-sanitized name back to the original internal name."""
+        return self._tool_name_map.get(name, name)
 
     def set_tool_schemas(self, schemas: dict[str, dict]):
         """Override tool schemas for specific tools (e.g. from handlers)."""
@@ -103,7 +113,12 @@ class ConnectorRegistry:
 
         Uses custom schemas from set_tool_schemas() when available,
         falls back to a generic schema otherwise.
+
+        Tool names are sanitized to comply with provider constraints
+        (e.g. OpenAI requires ^[a-zA-Z0-9_-]+$). Internal names with
+        dots are mapped to double-underscore variants transparently.
         """
+        self._tool_name_map = {}
         tools = []
         for connector in self._connectors.values():
             for action in connector.actions:
@@ -142,11 +157,14 @@ class ConnectorRegistry:
                         }
                     )
         for name, tool in self._explicit_tools.items():
+            sanitized = self._sanitize_tool_name(name)
+            if sanitized != name:
+                self._tool_name_map[sanitized] = name
             tools.append(
                 {
                     "type": "function",
                     "function": {
-                        "name": name,
+                        "name": sanitized,
                         "description": tool["description"],
                         "parameters": tool["parameters"],
                     },
@@ -155,7 +173,7 @@ class ConnectorRegistry:
         return tools
 
     def has_tool(self, name: str) -> bool:
-        return name in self._explicit_tools
+        return name in self._explicit_tools or name in self._tool_name_map
 
     def list_registered_tools(self) -> list[dict]:
         return [
@@ -169,6 +187,9 @@ class ConnectorRegistry:
 
     def unregister_tool(self, name: str):
         self._explicit_tools.pop(name, None)
+        self._tool_name_map = {
+            k: v for k, v in self._tool_name_map.items() if v != name
+        }
 
     def parse_tool_name(self, tool_name: str) -> tuple[str, str]:
         """Parse 'connector__action' back into (connector_name, action)."""
@@ -184,7 +205,8 @@ class ConnectorRegistry:
         return await connector.execute(action, params)
 
     async def execute_tool(self, name: str, params: dict | None = None) -> Any:
-        tool = self._explicit_tools.get(name)
+        resolved = self._resolve_tool_name(name)
+        tool = self._explicit_tools.get(resolved)
         if not tool:
             raise ValueError(f"Unknown tool: {name}")
         return await tool["handler"](**(params or {}))
