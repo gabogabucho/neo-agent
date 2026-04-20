@@ -1017,9 +1017,32 @@ def _exchange_openrouter_code(code: str, code_verifier: str) -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize async resources on startup."""
-    global _watchers
+    global _watchers, _inbox_consumer_task
     if _brain:
         await _brain.memory.init()
+
+    # Start the inbox consumer if brain was pre-initialized by CLI.
+    # CLI uses asyncio.run() which destroys its event loop — all async
+    # tasks (poll loops, watchers) die with it. We need to restart them
+    # here inside uvicorn's event loop.
+    if _brain and _inbox_consumer_task is None:
+        import asyncio as _asyncio
+
+        inbox = getattr(_brain, "inbox", None)
+        if inbox is not None:
+            _inbox_consumer_task = _asyncio.create_task(
+                inbox.start_consumer(_brain, session_manager)
+            )
+
+        # Re-activate gateway modules so their poll/watcher tasks run
+        # in this event loop instead of the dead CLI one.
+        manager = getattr(_brain, "module_manager", None)
+        if isinstance(manager, ModuleRuntimeManager):
+            manager.brain = _brain
+            # Unload all so sync() re-activates with fresh async tasks
+            for name in list(manager._loaded):
+                await manager.unload(name)
+            await manager.sync()
 
     # Start capability watchers if brain is ready
     if _brain and _awareness:
@@ -1043,6 +1066,8 @@ async def lifespan(app: FastAPI):
     # Cleanup
     if _watchers:
         await _watchers.stop()
+    if _inbox_consumer_task is not None:
+        _inbox_consumer_task.cancel()
     if _brain:
         if isinstance(getattr(_brain, "module_manager", None), ModuleRuntimeManager):
             await _brain.module_manager.close()

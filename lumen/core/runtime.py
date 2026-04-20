@@ -163,15 +163,6 @@ async def bootstrap_runtime(
     mcp_manager = MCPManager(config.get("mcp"), pkg_dir=pkg_dir)
     await mcp_manager.start(connectors.register_tool)
 
-    module_manager = ModuleRuntimeManager(
-        pkg_dir=pkg_dir,
-        lumen_dir=lumen_dir,
-        config=config,
-        connectors=connectors,
-        memory=memory,
-    )
-    await module_manager.sync()
-
     registry = Registry()
     discover_all(
         registry=registry,
@@ -207,11 +198,20 @@ async def bootstrap_runtime(
         language=config.get("language", "en"),
         api_key_env=config.get("api_key_env"),
     )
-    brain.module_manager = module_manager
-    module_manager.brain = brain
 
     from lumen.core.inbox import Inbox
     brain.inbox = Inbox()
+
+    module_manager = ModuleRuntimeManager(
+        pkg_dir=pkg_dir,
+        lumen_dir=lumen_dir,
+        config=config,
+        connectors=connectors,
+        memory=memory,
+        brain=brain,
+    )
+    brain.module_manager = module_manager
+    await module_manager.sync()
 
     flows_dir = pkg_dir / "locales" / lang / "flows"
     brain.load_flows(flows_dir)

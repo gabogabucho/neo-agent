@@ -1,0 +1,20 @@
+name: x-lumen-comunicacion-whatsapp
+display_name: "WhatsApp"
+description: "Canal de comunicación por WhatsApp vía Baileys. Funciona con cuentas personales. Requiere Node.js."
+version: 1.0.0
+author: "Lumen Team"
+price: free
+min_capability: tier-1
+provides:
+  - message.send_whatsapp
+tags: [x-lumen, comunicacion, whatsapp]
+x-lumen:
+  gateway:
+    channel: whatsapp
+  runtime:
+    env:
+      - name: WHATSAPP_BRIDGE_PORT
+        label: "Puerto del bridge"
+        hint: "Puerto para comunicación con el bridge de WhatsApp (default: 3100). Solo cambiá esto si tenés conflicto con otro servicio."
+        secret: false
+        expected_type: "int"

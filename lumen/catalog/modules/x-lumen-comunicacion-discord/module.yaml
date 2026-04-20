@@ -1,0 +1,23 @@
+name: x-lumen-comunicacion-discord
+display_name: "Discord"
+description: "Canal de comunicacion por Discord para enviar mensajes y recibir mensajes entrantes via polling REST API de forma autocontenida."
+version: 1.0.0
+author: "Lumen Team"
+price: free
+min_capability: tier-1
+provides:
+  - message.send_discord
+tags: [x-lumen, comunicacion, discord]
+x-lumen:
+  gateway:
+    channel: discord
+  runtime:
+    env:
+      - name: DISCORD_BOT_TOKEN
+        label: "Token del bot de Discord"
+        hint: "Creá un bot en Discord Developer Portal (Bot section) y copiá el token."
+        secret: true
+      - name: DISCORD_CHANNEL_ID
+        label: "Channel ID por defecto"
+        hint: "Habilitá Developer Mode en Discord (User Settings > Advanced), hacé clic derecho en el canal y copiá el Channel ID."
+        secret: false

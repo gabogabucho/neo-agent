@@ -114,6 +114,71 @@ Rule of thumb:
 pytest -q
 ```
 
+## Communication Channels
+
+Lumen ships with installable communication modules. All channels follow the same pattern: they write incoming messages to the unified inbox, and the brain processes them through a single identity. Install from the marketplace or configure via chat.
+
+| Module | Protocol | Dependencies | Notes |
+|--------|----------|-------------|-------|
+| **Telegram** | Bot API (polling) | None (stdlib) | Token from @BotFather |
+| **WhatsApp** | Baileys bridge (Node.js) | Node.js + npm | Personal accounts. QR pairing. |
+| **Discord** | REST API (polling) | None (stdlib) | Bot token + channel ID |
+| **Email** | IMAP/SMTP | None (stdlib) | Gmail, Outlook, Yahoo. App-specific password. |
+
+### How they work
+
+```
+User → Channel module → inbox.jsonl → Gateway watcher → Unified Inbox → Brain → Adapter → Channel module → User
+```
+
+All channels share one brain, one memory, one identity. Install as many as you want — Lumen responds consistently across all of them.
+
+## Deployment
+
+### Local (`lumen run`)
+
+```bash
+lumen run
+```
+
+Opens at `http://localhost:3000`. No auth required. Ideal for development and personal use.
+
+### VPS (`lumen serve`)
+
+```bash
+lumen serve --host 0.0.0.0 --port 3000
+```
+
+Shows a one-time setup token in the console. Access `http://your-ip:3000/setup`, enter the token, choose an owner PIN. After setup, the token is deleted and all access requires the PIN.
+
+**Security model:**
+- Setup token: generated once, shown only in console, deleted after first use
+- Owner PIN: PBKDF2-SHA256 hashed (260K iterations), stored in `~/.lumen/config.yaml`
+- Session cookies: HMAC-SHA256 signed, `httponly`, `samesite: lax`, 30-day expiry
+- WebSocket: requires the same owner cookie
+
+**With HTTPS (recommended for production):**
+
+Option A — Caddy (easiest):
+```bash
+caddy reverse-proxy --from yourdomain.com --to localhost:3000
+```
+
+Option B — Cloudflare Tunnel (no domain needed):
+```bash
+cloudflared tunnel --url http://localhost:3000
+# Gives you https://random-name.trycloudflare.com
+```
+
+Option C — Nginx + Let's Encrypt:
+```bash
+sudo apt install nginx certbot python3-certbot-nginx
+sudo certbot --nginx -d yourdomain.com
+# Configure proxy_pass http://127.0.0.1:3000
+```
+
+**Without HTTPS** (testing only): Direct IP access works. The setup token and owner PIN protect access, but credentials travel in plaintext. Use only for personal testing.
+
 ## Architecture
 
 Lumen has five layers with clear boundaries:
@@ -295,7 +360,7 @@ If you're authoring a new module, start from `lumen/modules/_template/module.yam
 - [x] OpenRouter OAuth + free-tier curation
 - [x] Comprehensive test suite (148 tests)
 - [x] CONTRIBUTING.md tutorial
-- [ ] Channel modules (`x-lumen-comunicacion-*`: WhatsApp, Telegram, ...)
+- [x] Channel modules (`x-lumen-comunicacion-*`: Telegram, WhatsApp, Discord, Email)
 - [ ] Public module registry / discovery
 - [ ] Docker support
 - [ ] Full hosted documentation

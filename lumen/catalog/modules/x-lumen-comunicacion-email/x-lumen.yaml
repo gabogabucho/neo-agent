@@ -1,0 +1,7 @@
+runtime:
+  self_contained: true
+  polling: true
+  cleanup_on_uninstall:
+    - runtime_dir
+    - inbox
+    - offsets

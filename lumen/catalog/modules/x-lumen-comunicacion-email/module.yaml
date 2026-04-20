@@ -1,0 +1,60 @@
+name: x-lumen-comunicacion-email
+display_name: "Email"
+description: "Canal de comunicación por Email (IMAP + SMTP) para recibir y enviar mensajes de forma autocontenida."
+version: 1.0.0
+author: "Lumen Team"
+price: free
+min_capability: tier-1
+provides:
+  - message.send_email
+tags: [x-lumen, comunicacion, email]
+x-lumen:
+  gateway:
+    channel: email
+  runtime:
+    env:
+      - name: EMAIL_ADDRESS
+        label: "Dirección de email"
+        hint: "La dirección de email que Lumen va a monitorear (ej. lumen@gmail.com)."
+        secret: false
+        pattern: "[^@]+@[^@]+\\.[^@]+"
+        format_guidance: "Formato: usuario@dominio.com"
+        examples:
+          - "lumen@gmail.com"
+          - "assistant@company.com"
+      - name: EMAIL_PASSWORD
+        label: "Contraseña de aplicación"
+        hint: "Usá una contraseña de aplicación específica (NO tu contraseña real). En Gmail: Mi Cuenta > Seguridad > Contraseñas de aplicación."
+        secret: true
+        format_guidance: "Contraseña de 16 caracteres generada por el proveedor."
+      - name: EMAIL_IMAP_HOST
+        label: "Servidor IMAP"
+        hint: "Servidor IMAP para recibir emails (ej. imap.gmail.com, outlook.office365.com)."
+        secret: false
+        examples:
+          - "imap.gmail.com"
+          - "outlook.office365.com"
+          - "imap.mail.yahoo.com"
+      - name: EMAIL_SMTP_HOST
+        label: "Servidor SMTP"
+        hint: "Servidor SMTP para enviar emails (ej. smtp.gmail.com, smtp.office365.com)."
+        secret: false
+        examples:
+          - "smtp.gmail.com"
+          - "smtp.office365.com"
+          - "smtp.mail.yahoo.com"
+      - name: EMAIL_IMAP_PORT
+        label: "Puerto IMAP"
+        hint: "Puerto del servidor IMAP (default: 993 para SSL)."
+        secret: false
+        expected_type: "int"
+      - name: EMAIL_SMTP_PORT
+        label: "Puerto SMTP"
+        hint: "Puerto del servidor SMTP (default: 587 para STARTTLS)."
+        secret: false
+        expected_type: "int"
+      - name: EMAIL_POLL_INTERVAL
+        label: "Intervalo de polling (segundos)"
+        hint: "Cada cuántos segundos revisar si hay emails nuevos (default: 15)."
+        secret: false
+        expected_type: "int"

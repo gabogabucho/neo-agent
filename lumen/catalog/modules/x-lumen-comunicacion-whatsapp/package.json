@@ -1,0 +1,16 @@
+{
+  "name": "lumen-whatsapp-bridge",
+  "version": "1.0.0",
+  "description": "WhatsApp bridge for Lumen using Baileys — connects to personal WhatsApp accounts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node bridge.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "WhiskeySockets/Baileys#fix/abprops-abt-fetch",
+    "express": "^4.21.0",
+    "qrcode-terminal": "^0.12.0",
+    "pino": "^9.0.0"
+  }
+}

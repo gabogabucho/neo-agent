@@ -68,6 +68,39 @@ modules:
       - message.send_telegram
     path: modules/x-lumen-comunicacion-telegram
 
+  - name: x-lumen-comunicacion-whatsapp
+    display_name: "WhatsApp"
+    description: "Canal de comunicación por WhatsApp Business Cloud API. Envío y recepción de mensajes."
+    version: "1.0.0"
+    author: "Lumen Team"
+    price: free
+    tags: [x-lumen, comunicacion, whatsapp]
+    provides:
+      - message.send_whatsapp
+    path: modules/x-lumen-comunicacion-whatsapp
+
+  - name: x-lumen-comunicacion-discord
+    display_name: "Discord"
+    description: "Canal de comunicación por Discord. Bot que escucha un canal y responde mensajes."
+    version: "1.0.0"
+    author: "Lumen Team"
+    price: free
+    tags: [x-lumen, comunicacion, discord]
+    provides:
+      - message.send_discord
+    path: modules/x-lumen-comunicacion-discord
+
+  - name: x-lumen-comunicacion-email
+    display_name: "Email"
+    description: "Canal de comunicación por email. Recibe vía IMAP y envía vía SMTP. Funciona con Gmail, Outlook y más."
+    version: "1.0.0"
+    author: "Lumen Team"
+    price: free
+    tags: [x-lumen, comunicacion, email]
+    provides:
+      - message.send_email
+    path: modules/x-lumen-comunicacion-email
+
 
   - name: scheduler
     display_name: "Scheduler"
