@@ -201,6 +201,17 @@ class Brain:
                 if flow_result is not None:
                     return await self._finalize_turn(session, message, flow_result)
 
+            # 2b. Natural-language setup: if the user mentions a module that
+            # has pending setup (by alias), start the flow directly. This
+            # prevents the LLM from trying to handle setup conversationally
+            # and failing to persist values.
+            setup_match = self._match_natural_setup(message)
+            if setup_match is not None:
+                session.start_flow(setup_match)
+                flow_result = await self._maybe_handle_runtime_flow(message, session)
+                if flow_result is not None:
+                    return await self._finalize_turn(session, message, flow_result)
+
         # 3. Build context — Consciousness + Personality + Body + Catalog + State
         context = {
             "consciousness": self.consciousness.as_context(),
@@ -499,6 +510,27 @@ class Brain:
                 if trigger.lower() in msg_lower:
                     return flow
         return None
+
+    def _match_natural_setup(self, message: str) -> dict | None:
+        """Detect when the user mentions a module with pending setup by name.
+
+        This bridges natural-language mentions ("hablar por telegram",
+        "conectarme a github") into the deterministic setup flow, preventing
+        the LLM from trying to handle setup conversationally and failing
+        to persist values.
+
+        Returns the flow if exactly one module matches, None otherwise.
+        """
+        matches: list[dict] = []
+        for flow in self.flows:
+            if not self._supports_runtime_flow(flow):
+                continue
+            artifact_id = self._flow_artifact_id(flow)
+            if not artifact_id:
+                continue
+            if self._message_mentions_module(message, artifact_id):
+                matches.append(flow)
+        return matches[0] if len(matches) == 1 else None
 
     async def _maybe_handle_runtime_flow(
         self, message: str, session: Session

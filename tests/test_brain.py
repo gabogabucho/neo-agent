@@ -862,6 +862,66 @@ class TestMatchFlowTrigger:
         assert mock_llm.await_count == 1
 
     @pytest.mark.asyncio
+    async def test_natural_language_mention_starts_setup_flow_without_llm(self):
+        brain = _make_brain(
+            flows=[
+                {
+                    "intent": "module-setup-telegram",
+                    "triggers": ["setup:telegram"],
+                    "slots": {"TELEGRAM_TOKEN": {"required": True, "ask": "Telegram token"}},
+                    "on_complete": "save_module_env:telegram",
+                    "first_message": "Telegram setup.",
+                }
+            ]
+        )
+        brain.memory.recall = AsyncMock(return_value=[])
+        brain.memory.save_conversation_turn = AsyncMock()
+
+        session = Session()
+
+        with patch("lumen.core.brain.acompletion") as mock_llm:
+            result = await brain.think(
+                "Hola! Te fijas si me puedes hablar por telegram?", session
+            )
+
+        mock_llm.assert_not_called()
+        assert "Telegram setup" in result["message"]
+        assert session.active_flow is not None
+        assert session.active_flow["intent"] == "module-setup-telegram"
+
+    @pytest.mark.asyncio
+    async def test_natural_language_ambiguous_setup_does_not_guess(self):
+        brain = _make_brain(
+            flows=[
+                {
+                    "intent": "module-setup-telegram",
+                    "triggers": ["setup:telegram"],
+                    "slots": {"TELEGRAM_TOKEN": {"required": True, "ask": "Telegram token"}},
+                    "on_complete": "save_module_env:telegram",
+                    "first_message": "Telegram setup.",
+                },
+                {
+                    "intent": "module-setup-telegram-notifications",
+                    "triggers": ["setup:telegram-notifications"],
+                    "slots": {"TG_KEY": {"required": True, "ask": "TG key"}},
+                    "on_complete": "save_module_env:telegram-notifications",
+                    "first_message": "TG setup.",
+                },
+            ]
+        )
+        brain.memory.recall = AsyncMock(return_value=[])
+        brain.memory.save_conversation_turn = AsyncMock()
+
+        session = Session()
+
+        with patch("lumen.core.brain.acompletion") as mock_llm:
+            mock_llm.return_value = _mock_llm_response("I see two Telegram options!")
+            result = await brain.think("hablar por telegram", session)
+
+        assert session.active_flow is None
+        assert mock_llm.await_count == 1
+
+    @pytest.mark.asyncio
     async def test_explicit_setup_trigger_still_works_with_pending_setup_offer(self):
         brain = _make_brain(
             flows=[
