@@ -2066,7 +2066,7 @@ def _fetch_openrouter_models() -> list[dict]:
     try:
         req = UrlRequest(
             OPENROUTER_MODELS_URL,
-            headers={"User-Agent": "lumen-agent/0.1.0", "Accept": "application/json"},
+            headers={"User-Agent": "enlumen/0.2.0", "Accept": "application/json"},
         )
         with urlopen(req, timeout=8) as response:
             payload = json.loads(response.read().decode("utf-8"))

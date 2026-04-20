@@ -354,12 +354,12 @@ def update():
         import subprocess
 
         result = subprocess.run(
-            [sys.executable, "-m", "pip", "index", "versions", "lumen-agent"],
+            [sys.executable, "-m", "pip", "index", "versions", "enlumen"],
             capture_output=True,
             text=True,
             timeout=15,
         )
-        if result.returncode == 0 and "lumen-agent" in result.stdout:
+        if result.returncode == 0 and "enlumen" in result.stdout:
             # Parse latest version from pip index output
             versions_line = result.stdout.strip()
             console.print(f"  [dim]{versions_line}[/dim]")

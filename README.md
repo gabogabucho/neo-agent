@@ -39,7 +39,7 @@ Lumen is a **downloadable AI agent framework** that works from minute zero. Inst
 ## Quickstart
 
 ```bash
-pip install lumen-agent
+pip install enlumen
 lumen run
 ```
 

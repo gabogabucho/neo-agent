@@ -9,7 +9,7 @@
 ## Context you need before starting
 
 ### What already works (do not touch)
-- `lumen-agent` PyPI name is **available** (verified 2026-04-18).
+- `enlumen` PyPI name is **available and published** (verified 2026-04-20). `lumen-agent` was blocked by name similarity.
 - Marketplace infra exists: [lumen/core/marketplace.py:352 `_load_remote`](../lumen/core/marketplace.py) fetches feeds, caches 300s, merges with local catalog.
 - Feeds configurable via `config.marketplace.feeds` or `LUMEN_MARKETPLACE_FEEDS` env.
 - Cerebellum already has `normalize_openclaw_metadata` in [lumen/core/cerebellum.py](../lumen/core/cerebellum.py) for shape translation.
@@ -165,7 +165,7 @@ Tests:
 twine upload --repository testpypi dist/*
 # Test install in clean venv:
 python -m venv /tmp/lumen-test && source /tmp/lumen-test/bin/activate
-pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ lumen-agent
+pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ enlumen
 lumen --help
 lumen run  # smoke test
 ```
@@ -179,7 +179,7 @@ twine upload dist/*
 ### Post-publish
 1. Tag git: `git tag v0.1.0 && git push --tags`.
 2. Create GitHub release with changelog summarizing bugfixes + awareness pipeline + remote catalogs.
-3. Announce with ready-to-copy paste: `pip install lumen-agent && lumen setup`.
+3. Announce with ready-to-copy paste: `pip install enlumen && lumen run`.
 
 ---
 
@@ -188,7 +188,7 @@ twine upload dist/*
 1. **MCP remote transport support**: must verify `mcp_runtime.py` handles `sse` and `streamable-http`. If not, MCP Registry is only half useful. Check BEFORE step 3.
 2. **ClawHub install requires Node**: not a blocker for v0.1 but should be mentioned in README prerequisites.
 3. **Network dependency at boot**: if user is offline, feeds fail. Cache already handles this gracefully (empty results), but `_load_remote` should log a single warning, not spam.
-4. **Rate limiting**: neither API documents limits. Add `User-Agent: lumen-agent/0.1.0` header to be good citizens and allow them to block us if we misbehave.
+4. **Rate limiting**: neither API documents limits. Add `User-Agent: enlumen/0.2.0` header to be good citizens and allow them to block us if we misbehave.
 5. **Telegram module untracked cleanup**: DONE (see `.gitignore` change 2026-04-18).
 6. **Windows CRLF warnings**: cosmetic, ignore.
 
