@@ -12,6 +12,8 @@ The brain combines three sources into one prompt:
 """
 
 import json
+import re
+import unicodedata
 from pathlib import Path
 
 import yaml
@@ -49,6 +51,7 @@ class Brain:
         capability_awareness: CapabilityAwareness | None = None,
         language: str = "en",
         api_key_env: str | None = None,
+        flow_action_handler=None,
     ):
         self.consciousness = consciousness
         self.personality = personality
@@ -63,6 +66,7 @@ class Brain:
         self.capability_awareness = capability_awareness
         self.language = (language or "en").lower()
         self.api_key_env = api_key_env
+        self.flow_action_handler = flow_action_handler
 
     def _resolved_model(self) -> str:
         """Route model through OpenRouter when OpenRouter creds are active."""
@@ -71,19 +75,118 @@ class Brain:
             return f"openrouter/{model}"
         return model
 
-    def _language_directive(self) -> str:
+    def _language_directive(
+        self, message: str | None = None, session: Session | None = None
+    ) -> str:
+        resolved_language = self._resolve_conversation_language(message, session)
         mapping = {
-            "es": "Always respond in Spanish (español rioplatense, natural y cálido).",
-            "en": "Always respond in English.",
-            "pt": "Always respond in Portuguese.",
-            "fr": "Always respond in French.",
-            "it": "Always respond in Italian.",
-            "de": "Always respond in German.",
+            "es": "Respond in Spanish (español rioplatense, natural y cálido).",
+            "en": "Respond in English.",
+            "pt": "Respond in Portuguese.",
+            "fr": "Respond in French.",
+            "it": "Respond in Italian.",
+            "de": "Respond in German.",
         }
-        return mapping.get(self.language, f"Always respond in the user's language (code: {self.language}).")
+        directive = mapping.get(
+            resolved_language,
+            f"Respond in the user's language naturally (code: {resolved_language}).",
+        )
+        if resolved_language != self.language:
+            config_language = mapping.get(
+                self.language,
+                f"the configured default locale ({self.language})",
+            )
+            return (
+                f"Default locale hint: {config_language} "
+                f"But in this conversation, follow the user's actual language. {directive}"
+            )
+        return directive
+
+    def _resolve_conversation_language(
+        self, message: str | None = None, session: Session | None = None
+    ) -> str:
+        detected = self._detect_obvious_language(message)
+        if detected:
+            return detected
+
+        if session:
+            recent_user_messages = [
+                item.get("content", "")
+                for item in reversed(session.history)
+                if item.get("role") == "user"
+            ]
+            for previous_message in recent_user_messages[:3]:
+                detected = self._detect_obvious_language(previous_message)
+                if detected:
+                    return detected
+
+        return self.language
+
+    @classmethod
+    def _detect_obvious_language(cls, message: str | None) -> str | None:
+        text = str(message or "").strip()
+        if not text:
+            return None
+
+        lowered = text.lower()
+        normalized = cls._normalize_message(text)
+        tokens = set(re.findall(r"[a-z]+", normalized))
+        if not tokens:
+            return None
+
+        spanish_markers = {
+            "hola",
+            "buenas",
+            "gracias",
+            "quiero",
+            "necesito",
+            "puedo",
+            "puedes",
+            "ayuda",
+            "ayudame",
+            "ayudar",
+            "configurar",
+            "telegram",
+            "como",
+            "que",
+        }
+        english_markers = {
+            "hello",
+            "hi",
+            "thanks",
+            "thank",
+            "please",
+            "want",
+            "need",
+            "help",
+            "configure",
+            "setup",
+            "what",
+            "how",
+        }
+
+        spanish_score = len(tokens & spanish_markers)
+        english_score = len(tokens & english_markers)
+
+        if any(char in lowered for char in "¿¡ñáéíóú"):
+            spanish_score += 1
+
+        if spanish_score > english_score and spanish_score >= 1:
+            return "es"
+        if english_score > spanish_score and english_score >= 1:
+            return "en"
+        return None
 
     async def think(self, message: str, session: Session) -> dict:
         """Receive message -> assemble context -> LLM decides -> response."""
+
+        offer_result = await self._maybe_handle_pending_setup_offer(message, session)
+        if offer_result is not None:
+            return await self._finalize_turn(session, message, offer_result)
+
+        flow_result = await self._maybe_handle_runtime_flow(message, session)
+        if flow_result is not None:
+            return await self._finalize_turn(session, message, flow_result)
 
         # 1. Recall relevant memories
         memories = await self.memory.recall(message, limit=5)
@@ -93,6 +196,9 @@ class Brain:
             triggered = self._match_flow_trigger(message)
             if triggered:
                 session.start_flow(triggered)
+                flow_result = await self._maybe_handle_runtime_flow(message, session)
+                if flow_result is not None:
+                    return await self._finalize_turn(session, message, flow_result)
 
         # 3. Build context — Consciousness + Personality + Body + Catalog + State
         context = {
@@ -171,6 +277,36 @@ class Brain:
             }
         )
 
+        # Add module setup save tool — persists collected env values
+        tools.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": "neo__save_module_setup",
+                    "description": (
+                        "Save configuration values for a module that needs setup. "
+                        "Call this when you have collected the required values "
+                        "(tokens, IDs, keys) from the user during a setup conversation. "
+                        "Values are validated and normalized automatically."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "module_name": {
+                                "type": "string",
+                                "description": "The module name (e.g. 'x-lumen-comunicacion-telegram')",
+                            },
+                            "values": {
+                                "type": "object",
+                                "description": "Map of env var names to their values (e.g. {\"TELEGRAM_BOT_TOKEN\": \"123:ABC\"})",
+                            },
+                        },
+                        "required": ["module_name", "values"],
+                    },
+                },
+            }
+        )
+
         tools = tools if tools else None
 
         try:
@@ -187,23 +323,7 @@ class Brain:
         # 6. Tool use loop — if LLM called tools, execute and send results back
         result = await self._tool_use_loop(response, messages, tools)
 
-        # 7. Update session history (RAM) + persistent memory (SQLite)
-        session.add_message("user", message)
-        session.add_message("assistant", result["message"])
-
-        # Persist conversation to SQLite — survives refresh and restart
-        try:
-            await self.memory.save_conversation_turn(
-                session.session_id, "user", message
-            )
-            if result["message"]:
-                await self.memory.save_conversation_turn(
-                    session.session_id, "assistant", result["message"]
-                )
-        except Exception:
-            pass  # Don't fail the response if persistence fails
-
-        return result
+        return await self._finalize_turn(session, message, result)
 
     async def think_proactive(self) -> str | None:
         """Generate a proactive announcement when capabilities changed.
@@ -304,6 +424,23 @@ class Brain:
 
         return {"found": len(modules), "modules": modules}
 
+    async def _save_module_setup(self, arguments: str) -> dict:
+        """Save collected module setup values through the normalization pipeline."""
+        if self.flow_action_handler is None:
+            return {"error": "Setup persistence is not available in this mode."}
+
+        params = json.loads(arguments) if arguments else {}
+        module_name = str(params.get("module_name") or "").strip()
+        values = params.get("values")
+        if not module_name:
+            return {"error": "module_name is required"}
+        if not isinstance(values, dict) or not values:
+            return {"error": "values must be a non-empty object with env var names as keys"}
+
+        return await self.flow_action_handler(
+            f"save_module_env:{module_name}", values
+        )
+
     def _match_flow_trigger(self, message: str) -> dict | None:
         """Check if a message matches any flow trigger."""
         msg_lower = message.lower()
@@ -312,6 +449,328 @@ class Brain:
                 if trigger.lower() in msg_lower:
                     return flow
         return None
+
+    async def _maybe_handle_runtime_flow(
+        self, message: str, session: Session
+    ) -> dict | None:
+        flow = session.active_flow
+        if not flow or not self._supports_runtime_flow(flow):
+            return None
+
+        pending = session.get_pending_slots()
+        if not pending:
+            return await self._complete_runtime_flow(session)
+
+        if not session.flow_prompted:
+            session.flow_prompted = True
+            return {
+                "message": self._render_flow_prompt(flow, pending[0]),
+                "user_message_for_history": message,
+            }
+
+        current_slot = pending[0]
+        value = str(message or "").strip()
+        if not value:
+            ask = str(current_slot.get("ask") or "").strip() or "Necesito ese dato."
+            return {
+                "message": ask,
+                "user_message_for_history": "",
+            }
+        session.fill_slot(current_slot["name"], value)
+
+        remaining = session.get_pending_slots()
+        if remaining:
+            return {
+                "message": self._render_next_slot_message(current_slot, remaining[0]),
+                "user_message_for_history": self._flow_history_value(
+                    current_slot, value
+                ),
+            }
+
+        completed = await self._complete_runtime_flow(session)
+        completed["user_message_for_history"] = self._flow_history_value(
+            current_slot, value
+        )
+        return completed
+
+    async def _complete_runtime_flow(self, session: Session) -> dict:
+        flow = session.active_flow or {}
+        slots = dict(session.slots)
+        action = str(flow.get("on_complete") or "").strip()
+        session.complete_flow()
+
+        if not action:
+            return {"message": "Listo."}
+        if self.flow_action_handler is None:
+            return {"message": "Listo."}
+
+        outcome = await self.flow_action_handler(action, slots, session=session)
+        if isinstance(outcome, dict):
+            message = str(outcome.get("message") or "").strip()
+            if message:
+                return {"message": message, "action_result": outcome}
+        return {"message": "Listo.", "action_result": outcome}
+
+    async def _maybe_handle_pending_setup_offer(
+        self, message: str, session: Session
+    ) -> dict | None:
+        if session.active_flow:
+            return None
+
+        offer = session.pending_setup_offer or {}
+        modules = [
+            module_name
+            for module_name in (offer.get("modules") or [])
+            if self._find_setup_flow(module_name) is not None
+        ]
+        if not modules:
+            session.pending_setup_offer = None
+            return None
+
+        if self._match_flow_trigger(message):
+            return None
+
+        explicit_setup_request = self._message_requests_setup(message)
+        selected = self._match_setup_offer_module(message, modules)
+        if selected:
+            return await self._start_pending_setup_flow(selected, session)
+
+        if explicit_setup_request:
+            if len(modules) == 1:
+                return await self._start_pending_setup_flow(modules[0], session)
+            session.pending_setup_offer = {"modules": modules, "turns_remaining": 1}
+            return {
+                "message": self._render_setup_offer_clarification(modules),
+                "preserve_pending_setup_offer": True,
+            }
+
+        allow_affirmative_reply = int(offer.get("turns_remaining") or 0) > 0
+        if len(modules) == 1 and allow_affirmative_reply and self._is_affirmative_reply(message):
+            return await self._start_pending_setup_flow(modules[0], session)
+
+        if len(modules) > 1 and allow_affirmative_reply and self._is_affirmative_reply(message):
+            session.pending_setup_offer = {"modules": modules, "turns_remaining": 1}
+            return {
+                "message": self._render_setup_offer_clarification(modules),
+                "preserve_pending_setup_offer": True,
+            }
+
+        return None
+
+    async def _start_pending_setup_flow(
+        self, module_name: str, session: Session, *, trigger_message: str | None = None
+    ) -> dict:
+        flow = self._find_setup_flow(module_name)
+        if flow is None:
+            session.pending_setup_offer = None
+            return {"message": "No encontré esa configuración pendiente."}
+        session.start_flow(flow)
+        # If the user already provided a value (trigger_message), skip the
+        # initial prompt and capture it as the first slot value directly.
+        if trigger_message:
+            session.flow_prompted = True
+            return await self._maybe_handle_runtime_flow(
+                trigger_message, session
+            ) or {"message": "Listo."}
+        return await self._maybe_handle_runtime_flow(module_name, session) or {
+            "message": "Listo."
+        }
+
+    async def _finalize_turn(self, session: Session, message: str, result: dict) -> dict:
+        self._update_pending_setup_offer(session, result)
+        user_history = result.get("user_message_for_history", message)
+
+        session.add_message("user", user_history)
+        session.add_message("assistant", result["message"])
+
+        try:
+            await self.memory.save_conversation_turn(
+                session.session_id, "user", user_history
+            )
+            if result["message"]:
+                await self.memory.save_conversation_turn(
+                    session.session_id, "assistant", result["message"]
+                )
+        except Exception:
+            pass
+
+        return result
+
+    @staticmethod
+    def _supports_runtime_flow(flow: dict) -> bool:
+        return str(flow.get("on_complete") or "").startswith("save_module_env:")
+
+    def _find_setup_flow(self, module_name: str) -> dict | None:
+        for flow in self.flows:
+            if not self._supports_runtime_flow(flow):
+                continue
+            if self._flow_module_name(flow) == module_name:
+                return flow
+        return None
+
+    def _update_pending_setup_offer(self, session: Session, result: dict) -> None:
+        if session.active_flow:
+            session.pending_setup_offer = None
+            return
+
+        setup_flows = [flow for flow in self.flows if self._supports_runtime_flow(flow)]
+        if not setup_flows:
+            session.pending_setup_offer = None
+            return
+
+        message = str(result.get("message") or "").strip()
+        if not self._looks_like_setup_offer(message):
+            if not result.get("preserve_pending_setup_offer"):
+                session.pending_setup_offer = None
+            return
+
+        modules = [self._flow_module_name(flow) for flow in setup_flows if self._flow_module_name(flow)]
+        modules = list(dict.fromkeys(modules))
+        if not modules:
+            session.pending_setup_offer = None
+            return
+
+        if len(modules) == 1:
+            session.pending_setup_offer = {"modules": modules, "turns_remaining": 1}
+            return
+
+        session.pending_setup_offer = {"modules": modules, "turns_remaining": 1}
+
+    @staticmethod
+    def _flow_module_name(flow: dict) -> str:
+        action = str(flow.get("on_complete") or "").strip()
+        if not action.startswith("save_module_env:"):
+            return ""
+        return action.split(":", 1)[1].strip()
+
+    @staticmethod
+    def _normalize_message(text: str) -> str:
+        normalized = unicodedata.normalize("NFKD", str(text or ""))
+        ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+        return re.sub(r"\s+", " ", ascii_text).strip().lower()
+
+    @classmethod
+    def _is_greeting_like(cls, message: str) -> bool:
+        """Check if a message is a greeting or small talk, not a value response."""
+        normalized = cls._normalize_message(message)
+        if not normalized:
+            return False
+        compact = re.sub(r"[^a-z0-9\s]", " ", normalized)
+        compact = re.sub(r"\s+", " ", compact).strip()
+        greetings = {
+            "hola", "buenas", "hello", "hi", "hey", "buen dia", "buenos dias",
+            "buenas tardes", "buenas noches", "good morning", "good evening",
+            "que tal", "como estas", "how are you", "whats up", "que onda",
+            "que haces", "como va", "como andas",
+        }
+        return compact in greetings
+
+    @classmethod
+    def _is_affirmative_reply(cls, message: str) -> bool:
+        normalized = cls._normalize_message(message)
+        if not normalized:
+            return False
+
+        compact = re.sub(r"[^a-z0-9\s]", " ", normalized)
+        compact = re.sub(r"\s+", " ", compact).strip()
+        affirmatives = {
+            "si",
+            "dale",
+            "yes",
+            "ok",
+            "okay",
+            "oki",
+            "va",
+            "claro",
+            "de una",
+            "listo",
+        }
+        return compact in affirmatives
+
+    @classmethod
+    def _looks_like_setup_offer(cls, message: str) -> bool:
+        normalized = cls._normalize_message(message)
+        if "?" not in message:
+            return False
+        return any(keyword in normalized for keyword in ("config", "setup", "set up"))
+
+    @classmethod
+    def _message_requests_setup(cls, message: str) -> bool:
+        normalized = cls._normalize_message(message)
+        return any(
+            phrase in normalized
+            for phrase in (
+                "setup",
+                "set up",
+                "configure",
+                "configurar",
+                "configura",
+                "configuracion",
+                "configuracion de",
+                "configure it",
+                "configuralo",
+            )
+        )
+
+    @classmethod
+    def _match_setup_offer_module(
+        cls, message: str, module_names: list[str]
+    ) -> str | None:
+        normalized = cls._normalize_message(message)
+        for module_name in module_names:
+            aliases = cls._module_aliases(module_name)
+            if any(alias in normalized for alias in aliases):
+                return module_name
+        return None
+
+    @classmethod
+    def _message_mentions_module(cls, message: str, module_name: str) -> bool:
+        return cls._match_setup_offer_module(message, [module_name]) == module_name
+
+    @staticmethod
+    def _module_aliases(module_name: str) -> set[str]:
+        aliases = {str(module_name or "").strip().lower()}
+        pieces = [
+            piece
+            for piece in re.split(r"[-_]", str(module_name or "").lower())
+            if len(piece) >= 4 and piece not in {"lumen", "module", "modulo"}
+        ]
+        aliases.update(pieces)
+        if pieces:
+            aliases.add(" ".join(pieces))
+            aliases.add(pieces[-1])
+        return {alias for alias in aliases if alias}
+
+    @staticmethod
+    def _render_setup_offer_clarification(module_names: list[str]) -> str:
+        listed = ", ".join(module_names)
+        return (
+            "Tengo más de un módulo pendiente de configuración: "
+            f"{listed}. Decime cuál querés configurar o usá setup:<módulo>."
+        )
+
+    @staticmethod
+    def _render_flow_prompt(flow: dict, next_slot: dict) -> str:
+        parts = []
+        first_message = str(flow.get("first_message") or "").strip()
+        if first_message:
+            parts.append(first_message)
+        ask = str(next_slot.get("ask") or "").strip()
+        if ask:
+            parts.append(ask)
+        return "\n\n".join(parts) if parts else "Contame ese dato."
+
+    @staticmethod
+    def _render_next_slot_message(filled_slot: dict, next_slot: dict) -> str:
+        ack = "Listo." if filled_slot.get("secret") else "Anotado."
+        ask = str(next_slot.get("ask") or "").strip()
+        return f"{ack}\n\n{ask}" if ask else ack
+
+    @staticmethod
+    def _flow_history_value(slot: dict, value: str) -> str:
+        if slot.get("secret"):
+            return f"[secret:{slot.get('name', 'value')}]"
+        return value
 
     def _build_prompt(
         self, context: dict, message: str, session: Session
@@ -328,23 +787,27 @@ class Brain:
             # LANGUAGE — responses must match the user's chosen locale
             "## LANGUAGE (HIGHEST PRIORITY — this overrides any other instruction)",
             "",
-            self._language_directive(),
+            self._language_directive(message=message, session=session),
+            "Treat the configured language as the default UI locale, but follow the user's actual conversational language when it is obvious.",
             "Even if other sections below are written in English, you MUST answer in the language above. Translate on the fly.",
             "",
             # CRITICAL RULES — the LLM MUST obey these
             "## RULES (you MUST follow these exactly)",
             "",
             "1. Your capabilities are EXACTLY what the Body section lists.",
-            "2. If something is listed under 'What I CAN do' — you CAN do it. Do NOT say you need to install it.",
-            "3. If something is listed under 'What I CANNOT do' — you CANNOT do it. Do NOT claim you can.",
-            "4. NEVER invent capabilities not listed in the Body.",
-            "5. When asked what you can do, ONLY list what the Body says.",
-            "6. When the 'Something changed in my body' section appears, you MAY "
-            "mention it naturally in your response. Use your own words. "
-            "Example: if you just gained Telegram, say something like "
-            "'Ah, I can now reach you on Telegram too.' "
-            "Do NOT say 'Capability event: telegram channel added.'",
-            "7. When a user asks 'what can you do?', respond conversationally "
+            "2. Only items under 'What I CAN do' are usable right now.",
+            "3. Installed or present is NOT the same as ready.",
+            "4. If something is listed under 'Installed but NOT ready yet' — say it exists, but be explicit that it still needs configuration, repair, or dependency fixes before you can use it.",
+            "5. Truthfulness about readiness is more important than the fact that something is installed. Never present a non-ready capability as usable, available now, or already working.",
+            "6. NEVER invent capabilities not listed in the Body.",
+            "7. When asked what you can do, ONLY list what the Body says, and separate READY capabilities from not-ready ones truthfully.",
+            "8. When the 'Something changed in my body' section appears, you MAY "
+            "mention it naturally — but ONLY if it's relevant to the conversation. "
+            "If the user is just greeting you or making small talk, IGNORE it. "
+            "A 'Hola' or 'Hey' does NOT need a capability announcement. "
+            "Example of GOOD timing: user asks about messaging → 'I can now reach you on Telegram too.' "
+            "Example of BAD timing: user says 'Hola' → 'I've connected to 8 services...' (don't do this).",
+            "9. When a user asks 'what can you do?', respond conversationally "
             "using the Body section. Do NOT dump the raw list — translate "
             "into human language.",
             "",
@@ -401,15 +864,34 @@ class Brain:
         # Available flows — for trigger detection
         elif context["available_flows"]:
             triggers = []
+            pending_setup_count = 0
             for flow in context["available_flows"]:
                 intent = flow.get("intent", "unknown")
                 flow_triggers = flow.get("triggers", [])
+
+                if self._supports_runtime_flow(flow):
+                    pending_setup_count += 1
                 triggers.append(f"- {intent}: {flow_triggers}")
             system_parts.append("\n## Available Flows")
             system_parts.append(
                 "If the user's message matches an intent, start the flow "
                 "by asking for the first required slot."
             )
+            if pending_setup_count > 0:
+                system_parts.append(
+                    "CRITICAL: When a user provides configuration values for a module "
+                    "(tokens, API keys, chat IDs), you MUST call neo__save_module_setup "
+                    "to persist them. Do NOT just acknowledge the values — actually save them "
+                    "with the tool. Do NOT ask the user to manually configure env vars."
+                )
+            if pending_setup_count == 1:
+                system_parts.append(
+                    "If that pending module setup feels relevant, you may offer to configure it now in natural language."
+                )
+            elif pending_setup_count > 1:
+                system_parts.append(
+                    "If pending module setups are relevant, do not assume which one the user wants; ask them to choose."
+                )
             system_parts.extend(triggers)
 
         # Relevant memories
@@ -517,6 +999,11 @@ class Brain:
                         )
                     elif func.name == "neo__search_modules":
                         tool_result = self._search_modules(func.arguments)
+                        all_tool_calls.append(
+                            {"name": func.name, "result": tool_result}
+                        )
+                    elif func.name == "neo__save_module_setup":
+                        tool_result = await self._save_module_setup(func.arguments)
                         all_tool_calls.append(
                             {"name": func.name, "result": tool_result}
                         )
