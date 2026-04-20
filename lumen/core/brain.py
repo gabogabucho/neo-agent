@@ -220,6 +220,43 @@ class Brain:
                 if flow_result is not None:
                     return await self._finalize_turn(session, message, flow_result)
 
+            # 2c. User explicitly requests setup ("configurémolo", "setup")
+            # and there's exactly one pending flow — start it without making
+            # the user name the module.
+            if self._message_requests_setup(message):
+                setup_flows = [
+                    f for f in self.flows if self._supports_runtime_flow(f)
+                ]
+                if len(setup_flows) == 1:
+                    session.start_flow(setup_flows[0])
+                    flow_result = await self._maybe_handle_runtime_flow(
+                        message, session
+                    )
+                    if flow_result is not None:
+                        return await self._finalize_turn(session, message, flow_result)
+                elif len(setup_flows) > 1:
+                    # Multiple flows — ask which one, don't guess
+                    artifacts = []
+                    for flow in setup_flows:
+                        aid = self._flow_artifact_id(flow)
+                        if aid:
+                            artifacts.append({
+                                "id": aid,
+                                "display_name": str(
+                                    flow.get("display_name") or aid
+                                ),
+                                "kind": str(flow.get("kind") or "native"),
+                            })
+                    return await self._finalize_turn(
+                        session,
+                        message,
+                        {
+                            "message": self._render_setup_offer_clarification(
+                                artifacts
+                            ),
+                        },
+                    )
+
         # 3. Build context — Consciousness + Personality + Body + Catalog + State
         context = {
             "consciousness": self.consciousness.as_context(),
