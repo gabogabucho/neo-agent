@@ -282,34 +282,42 @@ class TestArtifactSetupFlows:
         assert "GitHub" in flow["first_message"]
 
     def test_collect_pending_artifact_setup_flows_includes_mcp(self, tmp_path: Path):
-        modules_dir = tmp_path / "modules" / "pending-module"
-        modules_dir.mkdir(parents=True)
-        (modules_dir / "module.yaml").write_text(
-            """
+        from lumen.core import secrets_store
+        orig_lumen_dir = secrets_store.LUMEN_DIR
+        orig_secrets_path = secrets_store.SECRETS_PATH
+        secrets_store.configure_paths(lumen_dir=tmp_path)
+        try:
+            modules_dir = tmp_path / "modules" / "pending-module"
+            modules_dir.mkdir(parents=True)
+            (modules_dir / "module.yaml").write_text(
+                """
 name: pending-module
 x-lumen:
   runtime:
     env:
       - name: DEMO_TOKEN
 """.strip(),
-            encoding="utf-8",
-        )
+                encoding="utf-8",
+            )
 
-        config = {
-            "mcp": {
-                "servers": {
-                    "github": {
-                        "command": "npx",
-                        "args": ["-y", "@modelcontextprotocol/server-github"],
-                        "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": ""},
+            config = {
+                "mcp": {
+                    "servers": {
+                        "github": {
+                            "command": "npx",
+                            "args": ["-y", "@modelcontextprotocol/server-github"],
+                            "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": ""},
+                        }
                     }
                 }
             }
-        }
 
-        flows = collect_pending_artifact_setup_flows(tmp_path, config)
+            flows = collect_pending_artifact_setup_flows(tmp_path, config)
 
-        assert [flow["intent"] for flow in flows] == [
-            "module-setup-pending-module",
-            "artifact-setup-mcp-github",
-        ]
+            assert [flow["intent"] for flow in flows] == [
+                "module-setup-pending-module",
+                "artifact-setup-mcp-github",
+            ]
+        finally:
+            secrets_store.LUMEN_DIR = orig_lumen_dir
+            secrets_store.SECRETS_PATH = orig_secrets_path

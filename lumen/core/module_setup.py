@@ -125,13 +125,17 @@ def parse_env_specs(raw: Any) -> list[EnvSpec]:
 def missing_env_specs(
     specs: list[EnvSpec],
     config: dict | None = None,
+    *,
+    module_name: str | None = None,
 ) -> list[EnvSpec]:
     """Return the subset of ``specs`` with no value yet.
 
     A spec is considered satisfied if any of these is true:
       - it exists in ``os.environ``
-      - it exists in ``config["secrets"][<module>]`` (caller pre-flattens)
+      - it exists in ``config["secrets"][<module>]`` (in-memory secrets)
+      - it exists in ``~/.lumen/secrets.yaml`` under the module name
       - it exists as a top-level key in ``config`` (api_key_env style)
+      - it exists in ``config[<module_name>][<spec.name>]`` (module section)
     """
 
     config = config or {}
@@ -140,6 +144,17 @@ def missing_env_specs(
         if isinstance(bucket, dict):
             flat_secrets.update({str(k): str(v) for k, v in bucket.items()})
 
+    module_section = config.get(module_name) if module_name else None
+
+    # Also check the secrets store file
+    store_secrets: dict[str, str] = {}
+    if module_name:
+        try:
+            from lumen.core.secrets_store import load_module as _load_from_store
+            store_secrets = _load_from_store(module_name)
+        except Exception:
+            pass
+
     missing: list[EnvSpec] = []
     for spec in specs:
         if os.environ.get(spec.name):
@@ -147,6 +162,10 @@ def missing_env_specs(
         if flat_secrets.get(spec.name):
             continue
         if config.get(spec.name):
+            continue
+        if isinstance(module_section, dict) and module_section.get(spec.name):
+            continue
+        if store_secrets.get(spec.name):
             continue
         missing.append(spec)
     return missing
@@ -254,7 +273,7 @@ def pending_setup_for_manifest(
     specs = env_specs_from_manifest(manifest)
     if not specs:
         return None
-    missing = missing_env_specs(specs, config)
+    missing = missing_env_specs(specs, config, module_name=module_name)
     if not missing:
         readiness = run_module_setup_readiness_check(
             module_name,

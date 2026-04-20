@@ -6,8 +6,11 @@ import asyncio
 import importlib.util
 import inspect
 import json
+import logging
 import os
 import shutil
+
+logger = logging.getLogger(__name__)
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
@@ -278,12 +281,26 @@ class ModuleRuntimeManager:
         # to context.inbox. The framework handles adapter registration and
         # inbox consumer routing.
         gateway_cfg = _gateway_config(context.manifest)
+        send_fn = getattr(result, "send", None) or getattr(module, "send", None)
+        has_send = send_fn is not None and callable(send_fn)
+
         if gateway_cfg and context.inbox is not None:
             channel_id = gateway_cfg["channel"]
-            send_fn = getattr(result, "send", None) or getattr(module, "send", None)
-            if send_fn and callable(send_fn):
+            if has_send:
                 context.inbox.register_adapter(channel_id, send_fn)
             _start_gateway_inbox_watcher(name, channel_id, context)
+        elif has_send and context.inbox is not None:
+            # Module has send() and inbox but no gateway declaration —
+            # derive channel from module name and auto-register.
+            channel_id = _derive_channel_id(name, context.manifest)
+            logger.warning(
+                "Module %s has send() and inbox access but no x-lumen.gateway "
+                "in manifest. Auto-registering adapter for channel '%s'. "
+                "Add gateway.channel to the manifest to suppress this warning.",
+                name,
+                channel_id,
+            )
+            context.inbox.register_adapter(channel_id, send_fn)
 
 
 def _gateway_config(manifest: dict[str, Any] | None) -> dict[str, str] | None:
@@ -297,6 +314,20 @@ def _gateway_config(manifest: dict[str, Any] | None) -> dict[str, str] | None:
     if not isinstance(gateway, dict) or not gateway.get("channel"):
         return None
     return {"channel": str(gateway["channel"])}
+
+
+def _derive_channel_id(module_name: str, manifest: dict | None) -> str:
+    """Derive a channel ID from the module name when no gateway is declared.
+
+    Tries the manifest display_name first, then extracts from the module name
+    (e.g. "x-lumen-comunicacion-telegram" → "telegram").
+    """
+    if isinstance(manifest, dict):
+        display = manifest.get("display_name", "")
+        if display:
+            return display.lower().strip().replace(" ", "-")
+    parts = module_name.split("-")
+    return parts[-1] if parts else module_name
 
 
 def _start_gateway_inbox_watcher(
@@ -315,6 +346,7 @@ def _start_gateway_inbox_watcher(
     """
     inbox = context.inbox
     if inbox is None:
+        logger.warning("No inbox for gateway module %s — incoming messages will not be routed", module_name)
         return
 
     from lumen.core.inbox import IncomingMessage
@@ -326,6 +358,7 @@ def _start_gateway_inbox_watcher(
 
     async def _watch():
         offset = inbox_path.stat().st_size
+        logger.info("Inbox watcher started for %s, initial offset=%d", module_name, offset)
         while True:
             await asyncio.sleep(1)
             try:
@@ -334,6 +367,16 @@ def _start_gateway_inbox_watcher(
                 break
             if new_size <= offset:
                 continue
+            logger.info("New inbox data for %s: offset=%d new_size=%d", module_name, offset, new_size)
+        while True:
+            await asyncio.sleep(1)
+            try:
+                new_size = inbox_path.stat().st_size
+            except OSError:
+                break
+            if new_size <= offset:
+                continue
+            _logger.info("New data detected: offset=%d new_size=%d", offset, new_size)
             with inbox_path.open("r", encoding="utf-8") as f:
                 f.seek(offset)
                 for line in f:

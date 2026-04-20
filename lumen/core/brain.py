@@ -77,6 +77,109 @@ class Brain:
             return f"openrouter/{model}"
         return model
 
+    def _guard_capability_claims(self, response: str) -> str:
+        """Verify the LLM response doesn't claim capabilities Lumen doesn't have.
+
+        Only corrects when the response AFFIRMS having/using a capability
+        that's not installed or ready. Passes through responses that are
+        already truthful (acknowledging it's missing) or about installing.
+        """
+        claimed = self._detect_capability_mentions(response)
+        if not claimed:
+            return response
+
+        false_claims = []
+        for name in claimed:
+            cap = self._find_capability(name)
+            if cap is not None and cap.is_ready():
+                continue
+            # Only flag if the response AFFIRMS having/using it
+            if self._is_affirmative_claim(response, name):
+                false_claims.append(name)
+
+        if not false_claims:
+            return response
+
+        correction_parts = []
+        for name in false_claims:
+            cap = self._find_capability(name)
+            if cap is None:
+                correction_parts.append(
+                    f"No tengo {name} instalado. ¿Querés que lo instale?"
+                )
+            else:
+                correction_parts.append(
+                    f"{name} no está listo para usar todavía."
+                )
+
+        return " ".join(correction_parts)
+
+    _AFFIRMATIVE_PATTERNS = (
+        r"(?:tengo|I have |I can |puedo usar|puedo enviar|está configurado|"
+        r"is configured|está listo|is ready|está disponible|is available|"
+        r"ya puedo|funciona|works|ready to use|"
+        r"^sí,|^yes,|^si,|^claro)"
+    )
+
+    _NEGATIVE_PATTERNS = (
+        r"(?:no tengo|I don't have|I cannot|no puedo|no está|is not |"
+        r"instalar|install|quiero instalar|want to install|"
+        r"configurar|setup|falta|missing|need to|necesito)"
+    )
+
+    def _is_affirmative_claim(self, response: str, capability_name: str) -> bool:
+        """Check if the response AFFIRMS having a capability (vs just mentioning it)."""
+        import re
+        text_lower = response.lower()
+        # Find sentences containing the capability name
+        sentences = re.split(r'[.!?]', text_lower)
+        for sentence in sentences:
+            if capability_name not in sentence:
+                continue
+            # If the sentence already denies having it, it's truthful
+            if re.search(self._NEGATIVE_PATTERNS, sentence):
+                continue
+            # If the sentence affirms having/using it, it's a false claim
+            if re.search(self._AFFIRMATIVE_PATTERNS, sentence):
+                return True
+        return False
+
+    def _detect_capability_mentions(self, text: str) -> list[str]:
+        """Detect capability/channel names mentioned in a response."""
+        text_lower = text.lower()
+        found = []
+        for name in self._known_capability_names():
+            if re.search(r'\b' + re.escape(name) + r'\b', text_lower):
+                found.append(name)
+        return found
+
+    def _known_capability_names(self) -> list[str]:
+        """Collect all known capability names from registry and catalog."""
+        names = set()
+        for cap in self.registry.all():
+            names.add(cap.name.lower())
+            dn = cap.metadata.get("display_name")
+            if dn:
+                names.add(dn.lower())
+        for mod in self.catalog.modules:
+            names.add(mod.get("name", "").lower())
+            dn = mod.get("display_name")
+            if dn:
+                names.add(dn.lower())
+        # Remove empty and very short names (would cause false positives)
+        return [n for n in names if len(n) >= 3]
+
+    def _find_capability(self, name: str):
+        """Find a capability by name or display_name (case-insensitive)."""
+        name_lower = name.lower()
+        for cap in self.registry.all():
+            if cap.name.lower() == name_lower:
+                return cap
+            dn = cap.metadata.get("display_name")
+            if dn and dn.lower() == name_lower:
+                return cap
+        return None
+
     def _language_directive(
         self, message: str | None = None, session: Session | None = None,
         *,
@@ -395,6 +498,39 @@ class Brain:
             }
         )
 
+        tools.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": "neo__check_capability",
+                    "description": (
+                        "Check whether I actually have a specific capability right now. "
+                        "Searches my Registry for matching skills, connectors, modules, "
+                        "channels, and MCP servers — across all statuses. "
+                        "If nothing matches in the Registry, also checks the Catalog "
+                        "for installable options. "
+                        "Call this BEFORE claiming you can or cannot do something, "
+                        "especially when a user asks about a specific capability by name."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": (
+                                    "What capability to look for. "
+                                    "Can be a name (e.g. 'telegram', 'web-search'), "
+                                    "a description (e.g. 'send messages'), "
+                                    "or a concept (e.g. 'email', 'calendar')."
+                                ),
+                            }
+                        },
+                        "required": ["query"],
+                    },
+                },
+            }
+        )
+
         tools = tools if tools else None
 
         try:
@@ -511,6 +647,133 @@ class Brain:
             )
 
         return {"found": len(modules), "modules": modules}
+
+    def _check_capability(self, arguments: str) -> dict:
+        """Verify whether a specific capability exists and is ready.
+
+        Searches the Registry for fuzzy matches across name, description,
+        provides, tags, and display_name. Returns structured results
+        separating READY from not-ready matches. Falls back to Catalog
+        search when nothing is found in the Registry.
+        """
+        params = json.loads(arguments) if arguments else {}
+        query = str(params.get("query", "")).strip().lower()
+        if not query:
+            return {"error": "query is required"}
+
+        matches: list[dict] = []
+        for cap in self.registry.all():
+            score = self._score_capability_match(query, cap)
+            if score > 0:
+                matches.append({"score": score, "capability": cap})
+
+        matches.sort(key=lambda m: m["score"], reverse=True)
+
+        if matches:
+            ready = []
+            not_ready = []
+            for entry in matches[:10]:
+                cap = entry["capability"]
+                display_name = cap.metadata.get("display_name") or cap.name
+                item = {
+                    "name": cap.name,
+                    "display_name": display_name,
+                    "kind": cap.kind.value,
+                    "status": cap.status.value,
+                    "description": cap.description,
+                    "provides": cap.provides,
+                }
+                if cap.is_ready():
+                    ready.append(item)
+                else:
+                    item["blocker"] = self._describe_blocker(cap)
+                    not_ready.append(item)
+
+            result: dict = {"found": len(matches), "query": query}
+            if ready:
+                result["ready"] = ready
+            if not_ready:
+                result["not_ready"] = not_ready
+            return result
+
+        catalog_results = self.catalog.find_for_gap(
+            query,
+            registry=self.registry,
+            connectors=self.connectors,
+        )
+        if catalog_results:
+            installable = []
+            for mod in catalog_results[:3]:
+                installable.append({
+                    "name": mod["name"],
+                    "display_name": mod.get("display_name", mod["name"]),
+                    "description": mod.get("description", ""),
+                })
+            return {
+                "found": 0,
+                "query": query,
+                "message": (
+                    "No matching capability is installed or registered. "
+                    "However, these modules from the catalog could provide it."
+                ),
+                "installable": installable,
+            }
+
+        return {
+            "found": 0,
+            "query": query,
+            "message": (
+                "No matching capability found — not installed and not "
+                "available in the catalog. This would need to be built "
+                "as a custom module."
+            ),
+        }
+
+    @staticmethod
+    def _score_capability_match(query: str, cap) -> int:
+        """Score how well a capability matches a query. 0 = no match."""
+        score = 0
+        display_name = str(cap.metadata.get("display_name") or "").lower()
+        tags = [str(t).lower() for t in cap.metadata.get("tags", [])]
+        # Normalize separators so "send email" matches "send_email"
+        query_norm = query.replace(" ", "_").replace("-", "_")
+
+        if query in cap.name.lower() or query_norm in cap.name.lower():
+            score += 10
+        if query in display_name:
+            score += 8
+        for prov in cap.provides:
+            prov_lower = prov.lower()
+            if query in prov_lower or query_norm in prov_lower or prov_lower in query_norm:
+                score += 7
+        if query in cap.description.lower():
+            score += 5
+        for tag in tags:
+            if query in tag or query_norm in tag or tag in query_norm:
+                score += 3
+
+        return score
+
+    @staticmethod
+    def _describe_blocker(cap) -> str:
+        """Human-readable blocker reason for a not-ready capability."""
+        pending_setup = cap.metadata.get("pending_setup") or {}
+        env_specs = pending_setup.get("env_specs") or []
+        if env_specs:
+            names = ", ".join(
+                spec.get("label") or spec.get("name") or "unknown"
+                for spec in env_specs
+            )
+            return f"needs setup: {names}"
+        if cap.metadata.get("error"):
+            return f"error: {cap.metadata['error']}"
+        if cap.status.value == "missing_deps":
+            return "missing dependencies"
+        if cap.status.value == "no_handler":
+            return "missing handler implementation"
+        if cap.status.value == "available":
+            return "not configured yet"
+        return "not ready"
 
     async def _save_module_setup(self, arguments: str) -> dict:
         """Save collected module setup values through the normalization pipeline."""
@@ -706,6 +969,7 @@ class Brain:
         }
 
     async def _finalize_turn(self, session: Session, message: str, result: dict) -> dict:
+        result["message"] = self._guard_capability_claims(result["message"])
         self._update_pending_setup_offer(session, result)
         user_history = result.get("user_message_for_history", message)
 
@@ -977,6 +1241,11 @@ class Brain:
             "9. When a user asks 'what can you do?', respond conversationally "
             "using the Body section. Do NOT dump the raw list — translate "
             "into human language.",
+            "10. Before claiming you have (or lack) a specific capability — especially "
+            "messaging, integrations, or channels — call neo__check_capability to "
+            "verify it against your live Registry. Do NOT rely on memory or assumptions. "
+            "This is NOT needed for capabilities you have already used successfully "
+            "in the current conversation.",
             "",
             # 1. CONSCIOUSNESS — the soul (never changes)
             context["consciousness"],
@@ -1177,6 +1446,11 @@ class Brain:
                         )
                     elif func.name == "neo__save_artifact_setup":
                         tool_result = await self._save_artifact_setup(func.arguments)
+                        all_tool_calls.append(
+                            {"name": func.name, "result": tool_result}
+                        )
+                    elif func.name == "neo__check_capability":
+                        tool_result = self._check_capability(func.arguments)
                         all_tool_calls.append(
                             {"name": func.name, "result": tool_result}
                         )

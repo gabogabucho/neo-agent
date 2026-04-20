@@ -289,6 +289,19 @@ class Installer:
 
         shutil.rmtree(module_dir)
 
+        # Purge secrets — module is gone, secrets are useless
+        try:
+            from lumen.core.secrets_store import delete_module
+            delete_module(name)
+        except Exception:
+            pass
+
+        # Clean in-memory secrets
+        if isinstance(self.config, dict):
+            secrets = self.config.get("secrets")
+            if isinstance(secrets, dict):
+                secrets.pop(name, None)
+
         return {"status": "uninstalled", "name": name}
 
     def _generate_skill_md(self, module_info: dict) -> str:

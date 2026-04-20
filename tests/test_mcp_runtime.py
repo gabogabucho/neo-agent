@@ -41,42 +41,48 @@ class MCPRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_bootstrap_loads_pending_module_setup_flows(self):
         with tempfile.TemporaryDirectory() as tmp:
-            pkg_dir = self._make_runtime_pkg(Path(tmp))
-            module_dir = pkg_dir / "modules" / "pending-module"
-            module_dir.mkdir(parents=True)
-            (module_dir / "module.yaml").write_text(
-                yaml.dump(
-                    {
-                        "name": "pending-module",
-                        "display_name": "Pending Module",
-                        "description": "Needs setup",
-                        "x-lumen": {
-                            "runtime": {
-                                "env": [
-                                    {"name": "DEMO_TOKEN", "secret": True},
-                                ]
-                            }
-                        },
-                    },
-                    sort_keys=False,
-                ),
-                encoding="utf-8",
-            )
-
-            runtime = await bootstrap_runtime(
-                {"language": "en", "model": "deepseek/deepseek-chat"},
-                pkg_dir=pkg_dir,
-                lumen_dir=Path(tmp) / "runtime",
-                active_channels=["web"],
-            )
-
+            from lumen.core import secrets_store
+            orig_lumen_dir = secrets_store.LUMEN_DIR
+            orig_secrets_path = secrets_store.SECRETS_PATH
+            secrets_store.configure_paths(lumen_dir=Path(tmp) / "runtime")
             try:
+                pkg_dir = self._make_runtime_pkg(Path(tmp))
+                module_dir = pkg_dir / "modules" / "pending-module"
+                module_dir.mkdir(parents=True)
+                (module_dir / "module.yaml").write_text(
+                    yaml.dump(
+                        {
+                            "name": "pending-module",
+                            "display_name": "Pending Module",
+                            "description": "Needs setup",
+                            "x-lumen": {
+                                "runtime": {
+                                    "env": [
+                                        {"name": "DEMO_TOKEN", "secret": True},
+                                    ]
+                                }
+                            },
+                        },
+                        sort_keys=False,
+                    ),
+                    encoding="utf-8",
+                )
+
+                runtime = await bootstrap_runtime(
+                    {"language": "en", "model": "deepseek/deepseek-chat"},
+                    pkg_dir=pkg_dir,
+                    lumen_dir=Path(tmp) / "runtime",
+                    active_channels=["web"],
+                )
+
                 self.assertEqual(
                     [flow["intent"] for flow in runtime.brain.flows],
                     ["locale-default", "module-setup-pending-module"],
                 )
-            finally:
                 await runtime.brain.memory.close()
+            finally:
+                secrets_store.LUMEN_DIR = orig_lumen_dir
+                secrets_store.SECRETS_PATH = orig_secrets_path
 
     async def test_bootstrap_loads_pending_mcp_setup_flows(self):
         with tempfile.TemporaryDirectory() as tmp:

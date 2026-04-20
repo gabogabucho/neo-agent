@@ -171,6 +171,20 @@ class TestBuildSetupFlow:
 
 
 class TestManifestHelpers:
+    def setup_method(self):
+        from lumen.core import secrets_store
+        import tempfile
+        self._orig_lumen_dir = secrets_store.LUMEN_DIR
+        self._orig_secrets_path = secrets_store.SECRETS_PATH
+        secrets_store.configure_paths(lumen_dir=Path(tempfile.mkdtemp()))
+
+    def teardown_method(self):
+        from lumen.core import secrets_store
+        import shutil
+        shutil.rmtree(str(secrets_store.LUMEN_DIR), ignore_errors=True)
+        secrets_store.LUMEN_DIR = self._orig_lumen_dir
+        secrets_store.SECRETS_PATH = self._orig_secrets_path
+
     def test_env_specs_from_manifest_supports_legacy_string_list(self):
         manifest = {
             "x-lumen": {

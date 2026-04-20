@@ -541,6 +541,265 @@ class TestSearchModules:
         assert result["found"] <= 3
 
 
+# ── _check_capability ─────────────────────────────────────────────────
+
+
+class TestCheckCapability:
+    """Tests for the neo__check_capability self-verification tool."""
+
+    def test_finds_ready_capability_by_name(self):
+        registry = Registry()
+        registry.register(
+            Capability(
+                kind=CapabilityKind.CONNECTOR,
+                name="telegram",
+                description="Send and receive Telegram messages",
+                status=CapabilityStatus.READY,
+                provides=["send_message", "receive_message"],
+            )
+        )
+        brain = _make_brain(registry=registry)
+        result = brain._check_capability('{"query": "telegram"}')
+        assert result["found"] >= 1
+        assert any(c["name"] == "telegram" for c in result["ready"])
+        assert "not_ready" not in result or not result["not_ready"]
+
+    def test_finds_not_ready_capability(self):
+        registry = Registry()
+        registry.register(
+            Capability(
+                kind=CapabilityKind.MODULE,
+                name="telegram",
+                description="Telegram integration",
+                status=CapabilityStatus.AVAILABLE,
+                provides=["telegram_messaging"],
+                metadata={
+                    "display_name": "Telegram",
+                    "pending_setup": {
+                        "env_specs": [
+                            {"name": "BOT_TOKEN", "label": "Bot Token", "secret": True}
+                        ]
+                    },
+                },
+            )
+        )
+        brain = _make_brain(registry=registry)
+        result = brain._check_capability('{"query": "telegram"}')
+        assert result["found"] >= 1
+        assert "not_ready" in result
+        assert any(c["name"] == "telegram" for c in result["not_ready"])
+        assert "ready" not in result or not result["ready"]
+
+    def test_finds_by_provides_field(self):
+        registry = Registry()
+        registry.register(
+            Capability(
+                kind=CapabilityKind.CONNECTOR,
+                name="email-smtp",
+                description="Email connector",
+                status=CapabilityStatus.READY,
+                provides=["send_email", "receive_email"],
+            )
+        )
+        brain = _make_brain(registry=registry)
+        result = brain._check_capability('{"query": "send email"}')
+        assert result["found"] >= 1
+
+    def test_finds_by_description(self):
+        registry = Registry()
+        registry.register(
+            Capability(
+                kind=CapabilityKind.SKILL,
+                name="calendar-helper",
+                description="Manage calendar events and scheduling",
+                status=CapabilityStatus.READY,
+            )
+        )
+        brain = _make_brain(registry=registry)
+        result = brain._check_capability('{"query": "calendar"}')
+        assert result["found"] >= 1
+        assert any("calendar" in c["name"] for c in result["ready"])
+
+    def test_finds_by_display_name(self):
+        registry = Registry()
+        registry.register(
+            Capability(
+                kind=CapabilityKind.MODULE,
+                name="x-lumen-comunicacion-whatsapp",
+                description="WhatsApp Business API integration",
+                status=CapabilityStatus.READY,
+                metadata={"display_name": "WhatsApp"},
+            )
+        )
+        brain = _make_brain(registry=registry)
+        result = brain._check_capability('{"query": "whatsapp"}')
+        assert result["found"] >= 1
+
+    def test_catalog_fallback_when_no_registry_match(self):
+        brain = _make_brain(
+            registry=Registry(),
+            catalog=_make_catalog(
+                [
+                    {
+                        "name": "x-lumen-comunicacion-telegram",
+                        "display_name": "Telegram",
+                        "description": "Send Telegram messages",
+                        "tags": ["telegram", "messaging"],
+                        "fills_gaps": ["telegram", "messaging"],
+                    }
+                ]
+            ),
+        )
+        result = brain._check_capability('{"query": "telegram"}')
+        assert result["found"] == 0
+        assert "installable" in result
+        assert any(
+            "telegram" in m["name"].lower() for m in result["installable"]
+        )
+
+    def test_no_match_anywhere(self):
+        brain = _make_brain(registry=Registry(), catalog=_make_catalog())
+        result = brain._check_capability('{"query": "quantum computing"}')
+        assert result["found"] == 0
+        assert "No matching capability found" in result["message"]
+
+    def test_empty_query_returns_error(self):
+        brain = _make_brain()
+        result = brain._check_capability('{"query": ""}')
+        assert "error" in result
+
+    def test_mixed_ready_and_not_ready(self):
+        registry = Registry()
+        registry.register(
+            Capability(
+                kind=CapabilityKind.CHANNEL,
+                name="telegram-bot",
+                description="Telegram bot channel",
+                status=CapabilityStatus.READY,
+                provides=["telegram_bot"],
+            )
+        )
+        registry.register(
+            Capability(
+                kind=CapabilityKind.MODULE,
+                name="telegram-notifications",
+                description="Telegram push notifications",
+                status=CapabilityStatus.MISSING_DEPS,
+                metadata={"display_name": "Telegram Notifications"},
+            )
+        )
+        brain = _make_brain(registry=registry)
+        result = brain._check_capability('{"query": "telegram"}')
+        assert result["found"] >= 2
+        assert any(c["name"] == "telegram-bot" for c in result["ready"])
+        assert any(
+            c["name"] == "telegram-notifications" for c in result["not_ready"]
+        )
+
+    def test_searches_across_all_capability_kinds(self):
+        registry = Registry()
+        registry.register(
+            Capability(
+                kind=CapabilityKind.MCP,
+                name="github-server",
+                description="GitHub API access via MCP",
+                status=CapabilityStatus.READY,
+                provides=["github_api"],
+                metadata={"tags": ["github", "code"]},
+            )
+        )
+        brain = _make_brain(registry=registry)
+        result = brain._check_capability('{"query": "github"}')
+        assert result["found"] >= 1
+        assert result["ready"][0]["kind"] == "mcp"
+
+    def test_results_limited_to_ten(self):
+        registry = Registry()
+        for i in range(15):
+            registry.register(
+                Capability(
+                    kind=CapabilityKind.SKILL,
+                    name=f"search-skill-{i}",
+                    description=f"Search-related skill {i}",
+                    status=CapabilityStatus.READY,
+                )
+            )
+        brain = _make_brain(registry=registry)
+        result = brain._check_capability('{"query": "search"}')
+        total = len(result.get("ready", [])) + len(result.get("not_ready", []))
+        assert total <= 10
+
+    def test_blocker_describes_error(self):
+        registry = Registry()
+        registry.register(
+            Capability(
+                kind=CapabilityKind.MODULE,
+                name="broken-mod",
+                description="A broken module",
+                status=CapabilityStatus.ERROR,
+                metadata={"error": "connection refused"},
+            )
+        )
+        brain = _make_brain(registry=registry)
+        result = brain._check_capability('{"query": "broken"}')
+        assert result["found"] >= 1
+        blocker = result["not_ready"][0]["blocker"]
+        assert "connection refused" in blocker
+
+    def test_blocker_describes_pending_setup(self):
+        registry = Registry()
+        registry.register(
+            Capability(
+                kind=CapabilityKind.MODULE,
+                name="unconfigured-mod",
+                description="Needs config",
+                status=CapabilityStatus.AVAILABLE,
+                metadata={
+                    "pending_setup": {
+                        "env_specs": [
+                            {"name": "API_KEY", "label": "API Key"},
+                            {"name": "BASE_URL"},
+                        ]
+                    }
+                },
+            )
+        )
+        brain = _make_brain(registry=registry)
+        result = brain._check_capability('{"query": "unconfigured"}')
+        blocker = result["not_ready"][0]["blocker"]
+        assert "needs setup" in blocker
+
+    @pytest.mark.asyncio
+    async def test_check_capability_via_tool_use_loop(self):
+        brain = _make_brain()
+        brain.memory.recall = AsyncMock(return_value=[])
+        brain.memory.save_conversation_turn = AsyncMock()
+
+        brain.registry.register(
+            Capability(
+                kind=CapabilityKind.CONNECTOR,
+                name="telegram",
+                description="Telegram messaging",
+                status=CapabilityStatus.READY,
+            )
+        )
+
+        tool_call = _mock_tool_call(
+            "neo__check_capability", '{"query": "telegram"}'
+        )
+        first_response = _mock_llm_response(tool_calls=[tool_call])
+        final_response = _mock_llm_response("Yes, I have Telegram ready!")
+
+        with patch("lumen.core.brain.acompletion") as mock_llm:
+            mock_llm.side_effect = [first_response, final_response]
+            result = await brain.think("can you send me a telegram?", Session())
+
+        assert result["message"] == "Yes, I have Telegram ready!"
+        assert any(
+            tc["name"] == "neo__check_capability" for tc in result["tool_calls"]
+        )
+
+
 # ── _match_flow_trigger ──────────────────────────────────────────────
 
 
@@ -946,6 +1205,106 @@ class TestMatchFlowTrigger:
         assert session.active_flow is not None
         assert session.active_flow["intent"] == "module-setup-telegram"
         mock_llm.assert_not_called()
+
+
+# ── _guard_capability_claims ──────────────────────────────────────────
+
+
+class TestGuardCapabilityClaims:
+    """Tests for the deterministic capability claim guard."""
+
+    def test_replaces_false_claim_with_correction(self):
+        registry = Registry()
+        brain = _make_brain(
+            registry=registry,
+            catalog=_make_catalog(
+                [
+                    {
+                        "name": "x-lumen-comunicacion-telegram",
+                        "display_name": "Telegram",
+                        "description": "Telegram messaging",
+                        "tags": ["telegram"],
+                    }
+                ]
+            ),
+        )
+        response = brain._guard_capability_claims(
+            "Sí, tengo Telegram configurado y listo para usar."
+        )
+        assert "no tengo telegram instalado" in response.lower()
+        assert "Sí, tengo" not in response
+
+    def test_no_correction_when_capability_is_ready(self):
+        registry = Registry()
+        registry.register(
+            Capability(
+                kind=CapabilityKind.MODULE,
+                name="telegram",
+                description="Telegram messaging",
+                status=CapabilityStatus.READY,
+            )
+        )
+        brain = _make_brain(registry=registry)
+        response = brain._guard_capability_claims(
+            "Puedo enviarte un mensaje por Telegram."
+        )
+        assert response == "Puedo enviarte un mensaje por Telegram."
+
+    def test_corrects_not_ready_capability(self):
+        registry = Registry()
+        registry.register(
+            Capability(
+                kind=CapabilityKind.MODULE,
+                name="telegram",
+                description="Telegram messaging",
+                status=CapabilityStatus.AVAILABLE,
+                metadata={"display_name": "Telegram"},
+            )
+        )
+        brain = _make_brain(registry=registry)
+        response = brain._guard_capability_claims(
+            "Sí, Telegram está configurado y listo."
+        )
+        assert "no está listo" in response.lower()
+
+    def test_no_change_when_no_capability_mentioned(self):
+        brain = _make_brain()
+        response = brain._guard_capability_claims(
+            "¡Hola! ¿En qué puedo ayudarte hoy?"
+        )
+        assert response == "¡Hola! ¿En qué puedo ayudarte hoy?"
+
+    def test_no_false_positive_on_substring_match(self):
+        registry = Registry()
+        brain = _make_brain(registry=registry)
+        # "schedule" contains no known capability name as whole word
+        response = brain._guard_capability_claims(
+            "Puedo ayudarte a organizar tu agenda."
+        )
+        assert response == "Puedo ayudarte a organizar tu agenda."
+
+    def test_passes_through_action_mention(self):
+        """Mentioning a capability in an action context (not claiming to have it)
+        should pass through — e.g. 'Te mando un mensaje por Telegram'."""
+        brain = _make_brain(
+            registry=Registry(),
+            catalog=_make_catalog(
+                [
+                    {
+                        "name": "x-lumen-comunicacion-telegram",
+                        "display_name": "Telegram",
+                        "description": "Telegram messaging",
+                        "tags": ["telegram"],
+                        "fills_gaps": ["telegram"],
+                    }
+                ]
+            ),
+        )
+        response = brain._guard_capability_claims(
+            "Te mando un mensaje por Telegram."
+        )
+        # Should NOT be corrected — it's an action, not a claim of having it
+        assert response == "Te mando un mensaje por Telegram."
 
 
 # ── _build_prompt ────────────────────────────────────────────────────
