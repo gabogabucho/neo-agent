@@ -155,34 +155,44 @@ def missing_env_specs(
 def build_setup_flow(
     module_name: str,
     specs: list[EnvSpec],
+    *,
+    display_name: str | None = None,
+    kind: str = "native",
 ) -> dict[str, Any]:
     """Build a flow dict that Brain can run to collect ``specs`` via chat.
 
-    The flow declares one slot per spec. The ``ask`` combines label and hint
-    so the user sees context when Lumen asks. ``on_complete`` carries the
-    module name so the handler knows where to persist the captured values.
+    The flow declares one slot per spec. The ``ask`` is humanized by the
+    Cerebellum (label + hint + format guidance, no raw technical
+    instructions). ``on_complete`` carries the module name so the handler
+    knows where to persist the captured values.
     """
 
     if not module_name:
         raise ValueError("module_name is required")
 
+    from lumen.core.cerebellum import translate_slot_for_user
+
+    human_name = display_name or module_name
+
     slots: dict[str, Any] = {}
     for spec in specs:
-        ask = _build_slot_prompt(spec)
+        humanized = translate_slot_for_user(spec)
         slots[spec.name] = {
-            "ask": ask,
-            "type": "text",
-            "required": True,
-            "secret": spec.secret,
+            "ask": humanized.ask,
+            "type": humanized.type,
+            "required": humanized.required,
+            "secret": humanized.secret,
         }
 
     return {
         "intent": f"module-setup-{module_name}",
         "triggers": [f"setup:{module_name}"],
+        "display_name": human_name,
+        "kind": kind,
         "slots": slots,
         "on_complete": f"save_module_env:{module_name}",
         "first_message": (
-            f"Para que *{module_name}* funcione necesito algunos datos. "
+            f"Para que *{human_name}* funcione necesito algunos datos. "
             "Te los pido de a uno."
         ),
     }
@@ -442,27 +452,6 @@ def run_module_setup_readiness_check(
             payload["details"] = result.get("details")
         return payload
     return {"status": "failed", "reason": "Smoke/readiness check failed."}
-
-
-def _build_slot_prompt(spec: EnvSpec) -> str:
-    parts = [spec.label]
-    if spec.hint:
-        parts.append(spec.hint)
-    parts.append("Respondé con el valor crudo únicamente, sin frases, sin etiquetas y sin explicación.")
-
-    format_bits: list[str] = []
-    if spec.format_guidance:
-        format_bits.append(spec.format_guidance)
-    elif spec.expected_type and spec.expected_type not in {"text", "string"}:
-        format_bits.append(f"Tipo esperado: {spec.expected_type}.")
-    if spec.pattern:
-        format_bits.append(f"Patrón esperado: {spec.pattern}")
-    if spec.examples:
-        examples = ", ".join(f"`{example}`" for example in spec.examples[:2])
-        format_bits.append(f"Ejemplo: {examples}")
-    if format_bits:
-        parts.append("Formato: " + " ".join(bit.strip() for bit in format_bits if bit.strip()))
-    return "\n".join(parts)
 
 
 def _normalize_examples(raw: Any) -> list[str]:

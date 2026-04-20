@@ -568,40 +568,42 @@ class Brain:
             return None
 
         offer = session.pending_setup_offer or {}
-        modules = [
-            module_name
-            for module_name in (offer.get("modules") or [])
-            if self._find_setup_flow(module_name) is not None
+        artifacts = self._offer_artifacts(offer)
+        artifacts = [
+            a for a in artifacts
+            if self._find_setup_flow(a["id"]) is not None
         ]
-        if not modules:
+        if not artifacts:
             session.pending_setup_offer = None
             return None
+
+        module_ids = [a["id"] for a in artifacts]
 
         if self._match_flow_trigger(message):
             return None
 
         explicit_setup_request = self._message_requests_setup(message)
-        selected = self._match_setup_offer_module(message, modules)
+        selected = self._match_setup_offer_module(message, module_ids)
         if selected:
             return await self._start_pending_setup_flow(selected, session)
 
         if explicit_setup_request:
-            if len(modules) == 1:
-                return await self._start_pending_setup_flow(modules[0], session)
-            session.pending_setup_offer = {"modules": modules, "turns_remaining": 1}
+            if len(artifacts) == 1:
+                return await self._start_pending_setup_flow(module_ids[0], session)
+            session.pending_setup_offer = {"artifacts": artifacts, "turns_remaining": 1}
             return {
-                "message": self._render_setup_offer_clarification(modules),
+                "message": self._render_setup_offer_clarification(artifacts),
                 "preserve_pending_setup_offer": True,
             }
 
         allow_affirmative_reply = int(offer.get("turns_remaining") or 0) > 0
-        if len(modules) == 1 and allow_affirmative_reply and self._is_affirmative_reply(message):
-            return await self._start_pending_setup_flow(modules[0], session)
+        if len(artifacts) == 1 and allow_affirmative_reply and self._is_affirmative_reply(message):
+            return await self._start_pending_setup_flow(module_ids[0], session)
 
-        if len(modules) > 1 and allow_affirmative_reply and self._is_affirmative_reply(message):
-            session.pending_setup_offer = {"modules": modules, "turns_remaining": 1}
+        if len(artifacts) > 1 and allow_affirmative_reply and self._is_affirmative_reply(message):
+            session.pending_setup_offer = {"artifacts": artifacts, "turns_remaining": 1}
             return {
-                "message": self._render_setup_offer_clarification(modules),
+                "message": self._render_setup_offer_clarification(artifacts),
                 "preserve_pending_setup_offer": True,
             }
 
@@ -674,17 +676,29 @@ class Brain:
                 session.pending_setup_offer = None
             return
 
-        artifacts = [self._flow_artifact_id(flow) for flow in setup_flows if self._flow_artifact_id(flow)]
-        artifacts = list(dict.fromkeys(artifacts))
-        if not artifacts:
+        artifacts: list[dict[str, str]] = []
+        for flow in setup_flows:
+            aid = self._flow_artifact_id(flow)
+            if not aid:
+                continue
+            artifacts.append({
+                "id": aid,
+                "display_name": str(flow.get("display_name") or aid),
+                "kind": str(flow.get("kind") or "native"),
+            })
+
+        seen: set[str] = set()
+        unique: list[dict[str, str]] = []
+        for a in artifacts:
+            if a["id"] not in seen:
+                seen.add(a["id"])
+                unique.append(a)
+
+        if not unique:
             session.pending_setup_offer = None
             return
 
-        if len(artifacts) == 1:
-            session.pending_setup_offer = {"modules": artifacts, "turns_remaining": 1}
-            return
-
-        session.pending_setup_offer = {"modules": artifacts, "turns_remaining": 1}
+        session.pending_setup_offer = {"artifacts": unique, "turns_remaining": 1}
 
     @staticmethod
     def _flow_artifact_id(flow: dict) -> str:
@@ -692,6 +706,31 @@ class Brain:
         if not parsed:
             return ""
         return parsed[1]
+
+    def _resolve_display_name(self, artifact_id: str) -> str:
+        flow = self._find_setup_flow(artifact_id)
+        if flow:
+            return str(flow.get("display_name") or artifact_id)
+        return artifact_id
+
+    @staticmethod
+    def _offer_artifacts(offer: dict) -> list[dict[str, str]]:
+        """Extract enriched artifacts from a pending_setup_offer.
+
+        Handles both the new enriched format ``{artifacts: [{id, display_name, kind}]}``
+        and the legacy ``{modules: ["id1", "id2"]}`` format.
+        """
+        artifacts = offer.get("artifacts")
+        if artifacts and isinstance(artifacts, list):
+            return [a for a in artifacts if isinstance(a, dict) and a.get("id")]
+        modules = offer.get("modules")
+        if modules and isinstance(modules, list):
+            return [
+                {"id": m, "display_name": str(m), "kind": "native"}
+                for m in modules
+                if isinstance(m, str) and m
+            ]
+        return []
 
     @staticmethod
     def _normalize_message(text: str) -> str:
@@ -792,11 +831,12 @@ class Brain:
         return {alias for alias in aliases if alias}
 
     @staticmethod
-    def _render_setup_offer_clarification(module_names: list[str]) -> str:
-        listed = ", ".join(module_names)
+    def _render_setup_offer_clarification(artifacts: list[dict[str, str]]) -> str:
+        display_names = [a.get("display_name") or a.get("id", "?") for a in artifacts]
+        listed = ", ".join(f"*{name}*" for name in display_names)
         return (
-            "Tengo más de un módulo pendiente de configuración: "
-            f"{listed}. Decime cuál querés configurar o usá setup:<módulo>."
+            "Tengo varias configuraciones pendientes: "
+            f"{listed}. Decime cuál querés configurar."
         )
 
     @staticmethod

@@ -343,6 +343,7 @@ class MarketplaceTests(unittest.TestCase):
                     (),
                     {"current": lambda self: {"identity": {"name": "Runtime Lumen"}}},
                 )(),
+                "memory": type("MemoryStub", (), {"_db": object()})(),
             },
         )()
 
@@ -396,6 +397,7 @@ class MarketplaceTests(unittest.TestCase):
                     (),
                     {"current": lambda self: {"identity": {"name": "Locale Lumen"}}},
                 )(),
+                "memory": type("MemoryStub", (), {"_db": object()})(),
             },
         )()
 

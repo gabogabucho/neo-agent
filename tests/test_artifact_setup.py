@@ -275,8 +275,11 @@ class TestArtifactSetupFlows:
         assert flow is not None
         assert flow["intent"] == "artifact-setup-mcp-github"
         assert flow["on_complete"] == "save_artifact_env:mcp:github"
+        assert flow["display_name"] == "GitHub"
+        assert flow["kind"] == "mcp"
         assert "setup:github" in flow["triggers"]
         assert "setup:mcp:github" in flow["triggers"]
+        assert "GitHub" in flow["first_message"]
 
     def test_collect_pending_artifact_setup_flows_includes_mcp(self, tmp_path: Path):
         modules_dir = tmp_path / "modules" / "pending-module"

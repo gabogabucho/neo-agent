@@ -789,8 +789,9 @@ class TestMatchFlowTrigger:
             await brain.think("what changed?", session)
             second = await brain.think("dale", session)
 
-        assert "telegram, slack" in second["message"].lower()
-        assert "setup:<módulo>" in second["message"]
+        assert "telegram" in second["message"].lower()
+        assert "slack" in second["message"].lower()
+        assert "configuraciones pendientes" in second["message"].lower()
         assert session.active_flow is None
         assert mock_llm.await_count == 1
 

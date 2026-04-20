@@ -145,6 +145,8 @@ class TestBuildSetupFlow:
             flow["on_complete"]
             == "save_module_env:x-lumen-comunicacion-telegram"
         )
+        assert flow["display_name"] == "x-lumen-comunicacion-telegram"
+        assert flow["kind"] == "native"
         assert set(flow["slots"].keys()) == {
             "TELEGRAM_BOT_TOKEN",
             "TELEGRAM_CHAT_ID",
@@ -155,9 +157,8 @@ class TestBuildSetupFlow:
         assert token_slot["secret"] is True
         assert "Pedíselo a @BotFather" in token_slot["ask"]
         assert "Token del bot" in token_slot["ask"]
-        assert "valor crudo únicamente" in token_slot["ask"]
-        assert "Formato:" in token_slot["ask"]
-        assert "123456:ABC" in token_slot["ask"]
+        assert "Pegá solo el token" in token_slot["ask"]
+        assert "valor crudo" not in token_slot["ask"]
 
         chat_slot = flow["slots"]["TELEGRAM_CHAT_ID"]
         assert chat_slot["ask"].startswith("Chat ID")

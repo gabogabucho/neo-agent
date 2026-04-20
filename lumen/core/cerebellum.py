@@ -18,6 +18,7 @@ from lumen.core.model_tiers import (
     normalize_capability_tier,
     resolve_configured_model_tier,
 )
+from lumen.core.module_setup import EnvSpec
 from lumen.core.registry import Capability, CapabilityKind, CapabilityStatus, Registry
 
 
@@ -25,6 +26,52 @@ COMPAT_READY = "ready"
 COMPAT_INSTALLABLE = "installable"
 COMPAT_PARTIAL = "partial"
 COMPAT_BLOCKED = "blocked"
+
+
+# ---------------------------------------------------------------------------
+# Bidirectional translation (ida y vuelta)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class HumanizedSlot:
+    """A setup slot translated for human consumption."""
+
+    name: str
+    ask: str
+    type: str
+    required: bool
+    secret: bool
+
+
+def translate_slot_for_user(spec: EnvSpec) -> HumanizedSlot:
+    """Translate an EnvSpec into a user-facing slot (ida: system → user).
+
+    Builds a human-friendly prompt from label, hint, examples, and
+    format_guidance. Technical instructions (like ``respond with raw
+    value``) are NOT included — the Brain's value capture layer handles
+    extraction automatically.
+    """
+    parts = [spec.label]
+    if spec.hint:
+        parts.append(spec.hint)
+
+    format_bits: list[str] = []
+    if spec.format_guidance:
+        format_bits.append(spec.format_guidance)
+    elif spec.examples:
+        examples = ", ".join(f"`{ex}`" for ex in spec.examples[:2])
+        format_bits.append(f"Ejemplo: {examples}")
+
+    if format_bits:
+        parts.append(" ".join(bit.strip() for bit in format_bits if bit.strip()))
+
+    return HumanizedSlot(
+        name=spec.name,
+        ask="\n".join(parts),
+        type="text",
+        required=True,
+        secret=spec.secret,
+    )
 
 
 @dataclass

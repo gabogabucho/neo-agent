@@ -226,7 +226,12 @@ def build_flow_from_contract(contract: ArtifactSetupContract) -> dict[str, Any] 
     if not contract.has_pending_values():
         return None
 
-    flow = build_setup_flow(contract.artifact_id, contract.specs)
+    flow = build_setup_flow(
+        contract.artifact_id,
+        contract.specs,
+        display_name=contract.display_name,
+        kind=contract.kind,
+    )
     if contract.kind == KIND_NATIVE:
         return flow
 
@@ -236,10 +241,6 @@ def build_flow_from_contract(contract: ArtifactSetupContract) -> dict[str, Any] 
         f"setup:{contract.kind}:{contract.artifact_id}",
     ]
     flow["on_complete"] = contract.action_string
-    flow["first_message"] = (
-        f"Para que *{contract.display_name}* funcione necesito algunos datos. "
-        "Te los pido de a uno."
-    )
     return flow
 
 
