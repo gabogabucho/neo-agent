@@ -15,6 +15,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from lumen.core.artifact_setup import (
+    contract_from_mcp_server,
+    load_mcp_overlay,
+    pending_setup_from_contract,
+)
 from lumen.core.cerebellum import (
     annotate_registry,
     normalize_agent_skill,
@@ -58,7 +63,7 @@ def discover_all(
     _discover_channels(registry, active_channels or ["web"])
 
     if mcp_config:
-        _discover_mcps(registry, mcp_config)
+        _discover_mcps(registry, mcp_config, pkg_dir=pkg_dir)
 
     # Second pass: validate skill dependencies
     # If a skill requires a connector that has no handler, mark it as MISSING_DEPS
@@ -290,11 +295,20 @@ def _discover_channels(registry: Registry, active_channels: list[str]):
         )
 
 
-def _discover_mcps(registry: Registry, mcp_config: dict):
+def _discover_mcps(registry: Registry, mcp_config: dict, *, pkg_dir: Path | None = None):
     """Register MCP servers from config."""
     servers = mcp_config.get("servers", {})
     for name, config in servers.items():
+        overlay = load_mcp_overlay(name, pkg_dir)
+        pending_setup = config.get("pending_setup")
+        if not pending_setup:
+            pending_setup = pending_setup_from_contract(
+                contract_from_mcp_server(name, config, overlay=overlay)
+            )
+
         status_name = config.get("status", CapabilityStatus.AVAILABLE.value)
+        if pending_setup and pending_setup.get("env_specs"):
+            status_name = CapabilityStatus.AVAILABLE.value
         try:
             status = CapabilityStatus(status_name)
         except ValueError:
@@ -308,11 +322,16 @@ def _discover_mcps(registry: Registry, mcp_config: dict):
                 status=status,
                 provides=config.get("tools", []),
                 metadata={
+                    "display_name": config.get("display_name")
+                    or (pending_setup or {}).get("display_name")
+                    or (overlay or {}).get("display_name")
+                    or name,
                     "command": config.get("command"),
                     "args": config.get("args", []),
                     "url": config.get("url"),
                     "tools": config.get("tools", []),
                     "error": config.get("error"),
+                    "pending_setup": pending_setup,
                 },
             )
         )

@@ -675,6 +675,50 @@ class TestMatchFlowTrigger:
         )
 
     @pytest.mark.asyncio
+    async def test_artifact_setup_flow_supports_generic_mcp_actions(self):
+        handler = AsyncMock(
+            return_value={
+                "status": "ok",
+                "message": "Listo, github ya quedó listo para usar.",
+            }
+        )
+        brain = _make_brain(
+            flows=[
+                {
+                    "intent": "artifact-setup-mcp-github",
+                    "triggers": ["setup:github", "setup:mcp:github"],
+                    "slots": {
+                        "GITHUB_PERSONAL_ACCESS_TOKEN": {
+                            "required": True,
+                            "secret": True,
+                            "ask": "GitHub token",
+                        },
+                    },
+                    "on_complete": "save_artifact_env:mcp:github",
+                    "first_message": "Necesito un dato para GitHub.",
+                }
+            ],
+            flow_action_handler=handler,
+        )
+        brain.memory.recall = AsyncMock(return_value=[])
+        brain.memory.save_conversation_turn = AsyncMock()
+
+        session = Session()
+
+        with patch("lumen.core.brain.acompletion") as mock_llm:
+            first = await brain.think("setup:github", session)
+            second = await brain.think("ghp_secret", session)
+
+        mock_llm.assert_not_called()
+        assert first["message"] == "Necesito un dato para GitHub.\n\nGitHub token"
+        assert second["message"] == "Listo, github ya quedó listo para usar."
+        handler.assert_awaited_once_with(
+            "save_artifact_env:mcp:github",
+            {"GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_secret"},
+            session=session,
+        )
+
+    @pytest.mark.asyncio
     async def test_single_pending_setup_offer_starts_flow_on_affirmative_reply(self):
         brain = _make_brain(
             flows=[

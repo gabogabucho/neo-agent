@@ -78,6 +78,38 @@ class MCPRuntimeTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 await runtime.brain.memory.close()
 
+    async def test_bootstrap_loads_pending_mcp_setup_flows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = await bootstrap_runtime(
+                {
+                    "language": "en",
+                    "model": "deepseek/deepseek-chat",
+                    "mcp": {
+                        "servers": {
+                            "github": {
+                                "command": sys.executable,
+                                "args": [str(FAKE_SERVER)],
+                                "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": ""},
+                            }
+                        }
+                    },
+                },
+                pkg_dir=self._make_runtime_pkg(Path(tmp)),
+                lumen_dir=Path(tmp) / "runtime",
+                active_channels=["web"],
+            )
+
+            try:
+                assert [flow["intent"] for flow in runtime.brain.flows] == [
+                    "locale-default",
+                    "artifact-setup-mcp-github",
+                ]
+                assert runtime.brain.registry.get(CapabilityKind.MCP, "github").metadata[
+                    "pending_setup"
+                ]["env_specs"][0]["name"] == "GITHUB_PERSONAL_ACCESS_TOKEN"
+            finally:
+                await runtime.brain.memory.close()
+
     async def test_bootstrap_uses_active_personality_module_when_valid(self):
         with tempfile.TemporaryDirectory() as tmp:
             pkg_dir = self._make_runtime_pkg(Path(tmp))

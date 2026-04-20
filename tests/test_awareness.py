@@ -205,6 +205,39 @@ def test_awareness_surfaces_pending_module_setup_state():
     assert "DEMO_TOKEN" in prompt
 
 
+def test_awareness_surfaces_pending_mcp_setup_state():
+    registry = Registry()
+    awareness = CapabilityAwareness(registry)
+    registry.register(
+        Capability(
+            kind=CapabilityKind.MCP,
+            name="github",
+            description="GitHub MCP",
+            status=CapabilityStatus.AVAILABLE,
+            metadata={
+                "display_name": "GitHub",
+                "pending_setup": {
+                    "kind": "mcp",
+                    "artifact_id": "github",
+                    "env_specs": [
+                        {"name": "GITHUB_PERSONAL_ACCESS_TOKEN", "secret": True}
+                    ],
+                },
+            },
+        )
+    )
+
+    proactive = awareness.format_for_proactive()
+    prompt = awareness.format_for_prompt()
+
+    assert proactive is not None
+    assert "GitHub is installed" in proactive
+    assert "GITHUB_PERSONAL_ACCESS_TOKEN" in proactive
+    assert prompt is not None
+    assert "installed but not ready" in prompt
+    assert "GITHUB_PERSONAL_ACCESS_TOKEN" in prompt
+
+
 def test_consciousness_defaults_plain_runtime_capabilities_to_native_interoperability():
     classification = classify_capability(
         Capability(

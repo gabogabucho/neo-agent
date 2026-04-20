@@ -26,6 +26,7 @@ from typing import Any
 
 from lumen.core.module_setup import (
     EnvSpec,
+    build_setup_flow,
     env_specs_from_manifest,
     missing_env_specs,
     parse_env_specs,
@@ -217,6 +218,93 @@ def load_mcp_overlay(server_id: str, pkg_dir: Path | str | None) -> dict | None:
     except Exception:
         return None
     return data if isinstance(data, dict) else None
+
+
+def build_flow_from_contract(contract: ArtifactSetupContract) -> dict[str, Any] | None:
+    """Build a runtime flow for a setup contract with pending values."""
+
+    if not contract.has_pending_values():
+        return None
+
+    flow = build_setup_flow(contract.artifact_id, contract.specs)
+    if contract.kind == KIND_NATIVE:
+        return flow
+
+    flow["intent"] = f"artifact-setup-{contract.kind}-{contract.artifact_id}"
+    flow["triggers"] = [
+        f"setup:{contract.artifact_id}",
+        f"setup:{contract.kind}:{contract.artifact_id}",
+    ]
+    flow["on_complete"] = contract.action_string
+    flow["first_message"] = (
+        f"Para que *{contract.display_name}* funcione necesito algunos datos. "
+        "Te los pido de a uno."
+    )
+    return flow
+
+
+def pending_setup_from_contract(contract: ArtifactSetupContract | None) -> dict[str, Any] | None:
+    """Project a contract into the discovery/readiness payload shape."""
+
+    if contract is None:
+        return None
+    if contract.is_manual_only():
+        return {
+            "kind": contract.kind,
+            "artifact_id": contract.artifact_id,
+            "display_name": contract.display_name,
+            "env_specs": [],
+            "flow": None,
+            "manual_instructions": contract.manual_instructions,
+        }
+    if not contract.has_pending_values():
+        return None
+    return {
+        "kind": contract.kind,
+        "artifact_id": contract.artifact_id,
+        "display_name": contract.display_name,
+        "env_specs": [spec.to_dict() for spec in contract.specs],
+        "flow": build_flow_from_contract(contract),
+    }
+
+
+def collect_pending_artifact_setup_flows(
+    pkg_dir: Path,
+    config: dict | None = None,
+) -> list[dict[str, Any]]:
+    """Collect pending native + MCP setup flows from the unified contract layer."""
+
+    config = config or {}
+    flows: list[dict[str, Any]] = []
+
+    modules_dir = pkg_dir / "modules"
+    if modules_dir.exists():
+        from lumen.core.module_manifest import load_module_manifest
+
+        for module_dir in sorted(modules_dir.iterdir(), key=lambda item: item.name):
+            if not module_dir.is_dir() or module_dir.name.startswith("_"):
+                continue
+            _, manifest = load_module_manifest(module_dir)
+            module_name = str((manifest or {}).get("name") or module_dir.name)
+            contract = contract_from_native_manifest(module_name, manifest, config)
+            flow = build_flow_from_contract(contract) if contract else None
+            if flow:
+                flows.append(flow)
+
+    mcp_servers = ((config.get("mcp") or {}).get("servers") or {})
+    if isinstance(mcp_servers, dict):
+        for server_id in sorted(mcp_servers):
+            server_config = mcp_servers.get(server_id)
+            contract = contract_from_mcp_server(
+                server_id,
+                server_config,
+                overlay=load_mcp_overlay(server_id, pkg_dir),
+            )
+            flow = build_flow_from_contract(contract) if contract else None
+            if flow:
+                flows.append(flow)
+
+    return flows
 
 
 def parse_artifact_action(action: str) -> tuple[str, str] | None:
