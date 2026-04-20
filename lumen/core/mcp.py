@@ -9,7 +9,14 @@ import asyncio
 import json
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Awaitable, Callable
+
+from lumen.core.artifact_setup import (
+    contract_from_mcp_server,
+    load_mcp_overlay,
+    pending_setup_from_contract,
+)
 
 
 JsonDict = dict[str, Any]
@@ -31,6 +38,8 @@ class MCPServerState:
     status: str = "available"
     tools: list[str] = field(default_factory=list)
     error: str | None = None
+    display_name: str | None = None
+    pending_setup: JsonDict | None = None
 
     def to_discovery_entry(self) -> JsonDict:
         return {
@@ -41,6 +50,8 @@ class MCPServerState:
             "status": self.status,
             "tools": self.tools,
             "error": self.error,
+            "display_name": self.display_name,
+            "pending_setup": self.pending_setup,
         }
 
 
@@ -231,8 +242,9 @@ class StdioMCPServer:
 class MCPManager:
     """Starts configured stdio servers and exposes their tools through Lumen."""
 
-    def __init__(self, mcp_config: JsonDict | None = None):
+    def __init__(self, mcp_config: JsonDict | None = None, *, pkg_dir: Path | None = None):
         self.mcp_config = mcp_config or {}
+        self.pkg_dir = Path(pkg_dir) if pkg_dir is not None else None
         self.servers: dict[str, StdioMCPServer] = {}
         self.server_states: dict[str, MCPServerState] = {}
 
@@ -246,14 +258,35 @@ class MCPManager:
             if config.get("transport", "stdio") != "stdio" or config.get("disabled"):
                 continue
 
+            overlay = load_mcp_overlay(server_id, self.pkg_dir)
+            setup_contract = contract_from_mcp_server(
+                server_id,
+                config,
+                overlay=overlay,
+            )
+            pending_setup = pending_setup_from_contract(setup_contract)
+            display_name = (
+                (pending_setup or {}).get("display_name")
+                or (overlay or {}).get("display_name")
+                or config.get("display_name")
+                or config.get("description")
+                or server_id
+            )
+
             state = MCPServerState(
                 server_id=server_id,
                 description=config.get("description", f"MCP server: {server_id}"),
                 command=config.get("command"),
                 args=[str(arg) for arg in config.get("args", [])],
                 cwd=config.get("cwd"),
+                display_name=str(display_name),
+                pending_setup=pending_setup,
             )
             self.server_states[server_id] = state
+
+            if pending_setup and pending_setup.get("env_specs"):
+                state.status = "available"
+                continue
 
             server = StdioMCPServer(server_id, config)
             try:

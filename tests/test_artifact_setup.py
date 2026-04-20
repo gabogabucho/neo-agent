@@ -12,6 +12,8 @@ from lumen.core.artifact_setup import (
     KIND_MANUAL,
     KIND_MCP,
     KIND_NATIVE,
+    build_flow_from_contract,
+    collect_pending_artifact_setup_flows,
     contract_from_mcp_server,
     contract_from_native_manifest,
     load_mcp_overlay,
@@ -250,3 +252,61 @@ class TestParseArtifactAction:
         assert parse_artifact_action("save_artifact_env:") is None
         assert parse_artifact_action("save_artifact_env:foo:") is None
         assert parse_artifact_action("save_artifact_env:unknown:x") is None
+
+
+class TestArtifactSetupFlows:
+    def test_build_flow_from_contract_uses_generic_action_for_mcp(self):
+        contract = ArtifactSetupContract(
+            kind=KIND_MCP,
+            artifact_id="github",
+            display_name="GitHub",
+            specs=contract_from_mcp_server(
+                "github",
+                {"env": {"GITHUB_PERSONAL_ACCESS_TOKEN": ""}},
+                overlay={
+                    "display_name": "GitHub",
+                    "env": [{"name": "GITHUB_PERSONAL_ACCESS_TOKEN", "secret": True}],
+                },
+            ).specs,
+        )
+
+        flow = build_flow_from_contract(contract)
+
+        assert flow is not None
+        assert flow["intent"] == "artifact-setup-mcp-github"
+        assert flow["on_complete"] == "save_artifact_env:mcp:github"
+        assert "setup:github" in flow["triggers"]
+        assert "setup:mcp:github" in flow["triggers"]
+
+    def test_collect_pending_artifact_setup_flows_includes_mcp(self, tmp_path: Path):
+        modules_dir = tmp_path / "modules" / "pending-module"
+        modules_dir.mkdir(parents=True)
+        (modules_dir / "module.yaml").write_text(
+            """
+name: pending-module
+x-lumen:
+  runtime:
+    env:
+      - name: DEMO_TOKEN
+""".strip(),
+            encoding="utf-8",
+        )
+
+        config = {
+            "mcp": {
+                "servers": {
+                    "github": {
+                        "command": "npx",
+                        "args": ["-y", "@modelcontextprotocol/server-github"],
+                        "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": ""},
+                    }
+                }
+            }
+        }
+
+        flows = collect_pending_artifact_setup_flows(tmp_path, config)
+
+        assert [flow["intent"] for flow in flows] == [
+            "module-setup-pending-module",
+            "artifact-setup-mcp-github",
+        ]

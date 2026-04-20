@@ -263,9 +263,10 @@ class Registry:
             if has_pending_setup:
                 lines.append(
                     "IMPORTANT: When a user provides configuration values (tokens, keys, IDs) "
-                    "for any of these, I MUST call the neo__save_module_setup tool to persist "
-                    "them. I should NEVER ask the user to manually set env vars — I do it myself "
-                    "via the tool. After saving, confirm to the user that the module is now configured."
+                    "for any of these, I MUST persist them with neo__save_artifact_setup "
+                    "(or the legacy neo__save_module_setup alias for native modules). "
+                    "I should NEVER ask the user to manually set env vars — I do it myself "
+                    "via the tool. After saving, confirm whether the capability is now configured."
                 )
             for gap in all_gaps:
                 lines.append(self._format_not_ready_context_line(gap))

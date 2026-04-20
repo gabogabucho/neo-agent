@@ -19,6 +19,7 @@ from pathlib import Path
 import yaml
 from litellm import acompletion
 
+from lumen.core.artifact_setup import parse_artifact_action
 from lumen.core.awareness import CapabilityAwareness
 from lumen.core.catalog import Catalog
 from lumen.core.connectors import ConnectorRegistry
@@ -307,6 +308,37 @@ class Brain:
             }
         )
 
+        tools.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": "neo__save_artifact_setup",
+                    "description": (
+                        "Save configuration values for any pending artifact setup flow "
+                        "(for example MCP servers or native modules)."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "kind": {
+                                "type": "string",
+                                "description": "Artifact kind (native, mcp, manual, external)",
+                            },
+                            "artifact_id": {
+                                "type": "string",
+                                "description": "Artifact identifier (module/server id)",
+                            },
+                            "values": {
+                                "type": "object",
+                                "description": "Map of setup variable names to their values",
+                            },
+                        },
+                        "required": ["kind", "artifact_id", "values"],
+                    },
+                },
+            }
+        )
+
         tools = tools if tools else None
 
         try:
@@ -439,6 +471,24 @@ class Brain:
 
         return await self.flow_action_handler(
             f"save_module_env:{module_name}", values
+        )
+
+    async def _save_artifact_setup(self, arguments: str) -> dict:
+        """Save collected setup values for any artifact kind."""
+        if self.flow_action_handler is None:
+            return {"error": "Setup persistence is not available in this mode."}
+
+        params = json.loads(arguments) if arguments else {}
+        kind = str(params.get("kind") or "").strip()
+        artifact_id = str(params.get("artifact_id") or "").strip()
+        values = params.get("values")
+        if parse_artifact_action(f"save_artifact_env:{kind}:{artifact_id}") is None:
+            return {"error": "kind and artifact_id must describe a valid setup target"}
+        if not isinstance(values, dict) or not values:
+            return {"error": "values must be a non-empty object with setup keys as names"}
+
+        return await self.flow_action_handler(
+            f"save_artifact_env:{kind}:{artifact_id}", values
         )
 
     def _match_flow_trigger(self, message: str) -> dict | None:
@@ -598,13 +648,13 @@ class Brain:
 
     @staticmethod
     def _supports_runtime_flow(flow: dict) -> bool:
-        return str(flow.get("on_complete") or "").startswith("save_module_env:")
+        return parse_artifact_action(str(flow.get("on_complete") or "")) is not None
 
-    def _find_setup_flow(self, module_name: str) -> dict | None:
+    def _find_setup_flow(self, artifact_id: str) -> dict | None:
         for flow in self.flows:
             if not self._supports_runtime_flow(flow):
                 continue
-            if self._flow_module_name(flow) == module_name:
+            if self._flow_artifact_id(flow) == artifact_id:
                 return flow
         return None
 
@@ -624,24 +674,24 @@ class Brain:
                 session.pending_setup_offer = None
             return
 
-        modules = [self._flow_module_name(flow) for flow in setup_flows if self._flow_module_name(flow)]
-        modules = list(dict.fromkeys(modules))
-        if not modules:
+        artifacts = [self._flow_artifact_id(flow) for flow in setup_flows if self._flow_artifact_id(flow)]
+        artifacts = list(dict.fromkeys(artifacts))
+        if not artifacts:
             session.pending_setup_offer = None
             return
 
-        if len(modules) == 1:
-            session.pending_setup_offer = {"modules": modules, "turns_remaining": 1}
+        if len(artifacts) == 1:
+            session.pending_setup_offer = {"modules": artifacts, "turns_remaining": 1}
             return
 
-        session.pending_setup_offer = {"modules": modules, "turns_remaining": 1}
+        session.pending_setup_offer = {"modules": artifacts, "turns_remaining": 1}
 
     @staticmethod
-    def _flow_module_name(flow: dict) -> str:
-        action = str(flow.get("on_complete") or "").strip()
-        if not action.startswith("save_module_env:"):
+    def _flow_artifact_id(flow: dict) -> str:
+        parsed = parse_artifact_action(str(flow.get("on_complete") or "").strip())
+        if not parsed:
             return ""
-        return action.split(":", 1)[1].strip()
+        return parsed[1]
 
     @staticmethod
     def _normalize_message(text: str) -> str:
@@ -879,18 +929,19 @@ class Brain:
             )
             if pending_setup_count > 0:
                 system_parts.append(
-                    "CRITICAL: When a user provides configuration values for a module "
-                    "(tokens, API keys, chat IDs), you MUST call neo__save_module_setup "
+                    "CRITICAL: When a user provides configuration values for a pending setup "
+                    "(tokens, API keys, chat IDs), you MUST persist them with "
+                    "neo__save_artifact_setup (or neo__save_module_setup for legacy native-module flows). "
                     "to persist them. Do NOT just acknowledge the values — actually save them "
                     "with the tool. Do NOT ask the user to manually configure env vars."
                 )
             if pending_setup_count == 1:
                 system_parts.append(
-                    "If that pending module setup feels relevant, you may offer to configure it now in natural language."
+                    "If that pending setup feels relevant, you may offer to configure it now in natural language."
                 )
             elif pending_setup_count > 1:
                 system_parts.append(
-                    "If pending module setups are relevant, do not assume which one the user wants; ask them to choose."
+                    "If multiple pending setups are relevant, do not assume which one the user wants; ask them to choose."
                 )
             system_parts.extend(triggers)
 
@@ -1004,6 +1055,11 @@ class Brain:
                         )
                     elif func.name == "neo__save_module_setup":
                         tool_result = await self._save_module_setup(func.arguments)
+                        all_tool_calls.append(
+                            {"name": func.name, "result": tool_result}
+                        )
+                    elif func.name == "neo__save_artifact_setup":
+                        tool_result = await self._save_artifact_setup(func.arguments)
                         all_tool_calls.append(
                             {"name": func.name, "result": tool_result}
                         )

@@ -9,6 +9,7 @@ from pathlib import Path
 import yaml
 
 from lumen.core.awareness import CapabilityAwareness
+from lumen.core.artifact_setup import collect_pending_artifact_setup_flows
 from lumen.core.brain import Brain
 from lumen.core.catalog import Catalog
 from lumen.core.connectors import ConnectorRegistry
@@ -20,7 +21,6 @@ from lumen.core.memory import Memory
 from lumen.core.module_runtime import ModuleRuntimeManager
 from lumen.core.marketplace import Marketplace
 from lumen.core.module_manifest import load_module_manifest
-from lumen.core.module_setup import collect_pending_setup_flows
 from lumen.core.personality import Personality
 from lumen.core.registry import Registry
 
@@ -126,7 +126,7 @@ def reload_runtime_personality_surface(
     onboarding_flow_path = _resolve_module_onboarding_flow(active_personality_module)
     if onboarding_flow_path is not None:
         brain.load_flows(onboarding_flow_path)
-    _load_pending_module_setup_flows(brain, pkg_dir=pkg_dir, config=config)
+    _load_pending_artifact_setup_flows(brain, pkg_dir=pkg_dir, config=config)
 
 
 async def bootstrap_runtime(
@@ -160,7 +160,7 @@ async def bootstrap_runtime(
         connectors.load(built_in_path)
     register_builtin_handlers(connectors, memory)
 
-    mcp_manager = MCPManager(config.get("mcp"))
+    mcp_manager = MCPManager(config.get("mcp"), pkg_dir=pkg_dir)
     await mcp_manager.start(connectors.register_tool)
 
     module_manager = ModuleRuntimeManager(
@@ -215,7 +215,7 @@ async def bootstrap_runtime(
     onboarding_flow_path = _resolve_module_onboarding_flow(active_personality_module)
     if onboarding_flow_path is not None:
         brain.load_flows(onboarding_flow_path)
-    _load_pending_module_setup_flows(brain, pkg_dir=pkg_dir, config=config)
+    _load_pending_artifact_setup_flows(brain, pkg_dir=pkg_dir, config=config)
 
     ui_path = pkg_dir / "locales" / lang / "ui.yaml"
     locale = {}
@@ -305,10 +305,10 @@ def _resolve_module_asset_path(
     return candidate if candidate.exists() else None
 
 
-def _load_pending_module_setup_flows(
+def _load_pending_artifact_setup_flows(
     brain: Brain,
     *,
     pkg_dir: Path,
     config: dict,
 ) -> None:
-    brain.flows.extend(collect_pending_setup_flows(pkg_dir / "modules", config))
+    brain.flows.extend(collect_pending_artifact_setup_flows(pkg_dir, config))

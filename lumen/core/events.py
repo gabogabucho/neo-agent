@@ -54,18 +54,20 @@ class CapabilityEvent:
         pending_setup = self.details.get("pending_setup") or self.capability.metadata.get(
             "pending_setup"
         )
-        if pending_setup and self.capability.kind.value == "module":
-            module_label = self.capability.metadata.get("display_name") or self.capability.name
+        if pending_setup:
+            capability_label = (
+                self.capability.metadata.get("display_name") or self.capability.name
+            )
             missing = _pending_setup_names(pending_setup)
             if missing:
                 return (
-                    f"{module_label} is installed, but it still needs configuration "
+                    f"{capability_label} is installed, but it still needs configuration "
                     f"before it can work (missing: {missing})."
                 )
             count = len(pending_setup.get("env_specs") or [])
             if count == 1:
-                return f"{module_label} is installed, but it still needs one setup value before it can work."
-            return f"{module_label} is installed, but it still needs {count} setup values before it can work."
+                return f"{capability_label} is installed, but it still needs one setup value before it can work."
+            return f"{capability_label} is installed, but it still needs {count} setup values before it can work."
         return self.details.get("announce_text") or self.classification().get("announce_text")
 
     def to_dict(self) -> dict[str, Any]:
@@ -86,7 +88,7 @@ class CapabilityEvent:
         if self.kind == "capability_discovered":
             summary = f"+ discovered {cap.name} ({cap.kind.value}, {lens}): {cap.description}"
             pending_setup = self.details.get("pending_setup") or cap.metadata.get("pending_setup")
-            if pending_setup and cap.kind.value == "module":
+            if pending_setup:
                 missing = _pending_setup_names(pending_setup)
                 if missing:
                     summary = f"{summary} [installed but not ready: missing {missing}]"
