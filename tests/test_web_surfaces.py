@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import tempfile
@@ -159,6 +160,10 @@ class WebSurfaceTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["mcp"]["error"], 1)
         self.assertEqual(payload["awareness"], {"pending": 0, "counts": {}, "effects": {}, "events": []})
         self.assertEqual(payload["module_setup"], {"pending": 0})
+        self.assertEqual(
+            payload["artifact_setup"],
+            {"pending": 0, "by_kind": {"module": 0, "mcp": 0}},
+        )
         self.assertEqual(payload["flows"][0]["intent"], "book_demo")
         self.assertEqual(payload["flows"][0]["slots"], ["email", "date"])
         self.assertEqual(payload["capabilities"][2]["min_capability"], "tier-2")
@@ -179,10 +184,47 @@ class WebSurfaceTests(unittest.TestCase):
                 "summary": {},
                 "awareness": {"pending": 0, "counts": {}, "effects": {}, "events": []},
                 "module_setup": {"pending": 0},
+                "artifact_setup": {"pending": 0, "by_kind": {"module": 0, "mcp": 0}},
                 "flows": [],
                 "ready": 0,
                 "gaps": 0,
             },
+        )
+
+    def test_api_status_surfaces_pending_mcp_setup_truthfully(self):
+        registry = Registry()
+        registry.register(
+            Capability(
+                kind=CapabilityKind.MCP,
+                name="github",
+                description="GitHub MCP",
+                status=CapabilityStatus.AVAILABLE,
+                metadata={
+                    "display_name": "GitHub",
+                    "pending_setup": {
+                        "kind": "mcp",
+                        "artifact_id": "github",
+                        "env_specs": [
+                            {
+                                "name": "GITHUB_PERSONAL_ACCESS_TOKEN",
+                                "secret": True,
+                            }
+                        ],
+                    },
+                },
+            )
+        )
+        web._brain = BrainStub(registry=registry)
+        web._config = {"model": "demo-model"}
+
+        response = self.client.get("/api/status")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["module_setup"], {"pending": 0})
+        self.assertEqual(
+            payload["artifact_setup"],
+            {"pending": 1, "by_kind": {"module": 0, "mcp": 1}},
         )
 
     def test_api_modules_setup_persists_values_without_echoing_secrets(self):
@@ -360,6 +402,52 @@ class WebSurfaceTests(unittest.TestCase):
             saved["secrets"]["pending-module"],
             {"DEMO_TOKEN": "token-READY"},
         )
+
+    def test_flow_action_persists_mcp_setup_and_restarts_runtime(self):
+        web._brain = BrainStub()
+        web._brain.mcp_manager = object()
+        web._config = {
+            "model": "demo-model",
+            "mcp": {
+                "servers": {
+                    "github": {
+                        "command": "npx",
+                        "args": ["-y", "@modelcontextprotocol/server-github"],
+                        "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": ""},
+                    }
+                }
+            },
+        }
+
+        with patch("lumen.channels.web._restart_mcp_runtime") as restart_mock:
+            with patch("lumen.channels.web.refresh_runtime_registry") as refresh_mock:
+                with patch("lumen.channels.web.reload_runtime_personality_surface") as reload_mock:
+                    with patch("lumen.channels.web.broadcast_awareness") as awareness_mock:
+                        # direct helper call keeps the test focused on persistence + refresh
+                        payload = asyncio.run(
+                            web._handle_flow_action(
+                                "save_artifact_env:mcp:github",
+                                {"GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"},
+                            )
+                        )
+
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["server_id"], "github")
+        self.assertEqual(payload["saved_env"], ["GITHUB_PERSONAL_ACCESS_TOKEN"])
+        self.assertIsNone(payload["pending_setup"])
+        saved = yaml.safe_load(web.CONFIG_PATH.read_text(encoding="utf-8")) or {}
+        self.assertEqual(
+            saved["mcp"]["servers"]["github"]["env"],
+            {"GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"},
+        )
+        self.assertEqual(
+            web._config["mcp"]["servers"]["github"]["env"]["GITHUB_PERSONAL_ACCESS_TOKEN"],
+            "ghp_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
+        )
+        self.assertTrue(restart_mock.await_count == 1)
+        refresh_mock.assert_called_once()
+        reload_mock.assert_called_once()
+        self.assertTrue(awareness_mock.await_count == 1)
 
     def test_api_history_returns_persisted_messages(self):
         web._brain = BrainStub(

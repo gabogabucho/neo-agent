@@ -26,6 +26,12 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from lumen.core.artifact_setup import (
+    contract_from_mcp_server,
+    load_mcp_overlay,
+    parse_artifact_action,
+    pending_setup_from_contract,
+)
 from lumen.core.registry import CapabilityKind
 from lumen.core.runtime import (
     bootstrap_runtime,
@@ -35,6 +41,7 @@ from lumen.core.runtime import (
 )
 from lumen.core.module_runtime import ModuleRuntimeManager
 from lumen.core.marketplace import humanize_module_name
+from lumen.core.mcp import MCPManager
 from lumen.core.session import SessionManager
 from lumen.core.module_manifest import load_module_manifest
 from lumen.core.module_setup import (
@@ -100,13 +107,19 @@ def _attach_brain_runtime_handlers():
 
 
 async def _handle_flow_action(action: str, slots: dict, *, session=None) -> dict:
-    if not action.startswith("save_module_env:"):
+    parsed = parse_artifact_action(action)
+    if parsed is None:
         return {"status": "ignored", "message": "Listo."}
 
-    module_name = action.split(":", 1)[1].strip()
-    if not module_name:
-        return {"status": "error", "message": "No pude identificar el módulo a configurar."}
-    return await _persist_module_setup_slots(module_name, slots)
+    kind, artifact_id = parsed
+    if kind == "native":
+        return await _persist_module_setup_slots(artifact_id, slots)
+    if kind == "mcp":
+        return await _persist_mcp_setup_slots(artifact_id, slots)
+    return {
+        "status": "error",
+        "message": f"Todavía no sé guardar configuraciones para artefactos de tipo {kind}.",
+    }
 
 
 async def _persist_module_setup_slots(module_name: str, values: dict | None) -> dict:
@@ -199,6 +212,107 @@ async def _persist_module_setup_slots(module_name: str, values: dict | None) -> 
     return {
         "status": "ok" if not validation_errors else "partial",
         "module": module_name,
+        "saved_env": saved_env,
+        "pending_setup": after_pending,
+        "errors": validation_errors,
+        "message": message,
+    }
+
+
+async def _restart_mcp_runtime() -> None:
+    if _brain is None:
+        return
+
+    for tool in list(_brain.connectors.list_registered_tools()):
+        metadata = tool.get("metadata") or {}
+        if metadata.get("kind") == "mcp":
+            _brain.connectors.unregister_tool(tool.get("name", ""))
+
+    if getattr(_brain, "mcp_manager", None):
+        await _brain.mcp_manager.close()
+
+    manager = MCPManager(_config.get("mcp"), pkg_dir=PKG_DIR)
+    await manager.start(_brain.connectors.register_tool)
+    _brain.mcp_manager = manager
+
+
+async def _persist_mcp_setup_slots(server_id: str, values: dict | None) -> dict:
+    global _config
+
+    servers = (((_config.get("mcp") or {}).get("servers")) or {})
+    server_config = servers.get(server_id)
+    if not isinstance(server_config, dict):
+        return {"status": "error", "message": f"El servidor MCP {server_id} ya no está configurado."}
+
+    overlay = load_mcp_overlay(server_id, PKG_DIR)
+    before_contract = contract_from_mcp_server(server_id, server_config, overlay=overlay)
+    before_pending = pending_setup_from_contract(before_contract)
+    if before_contract is None:
+        return {
+            "status": "ok",
+            "server_id": server_id,
+            "saved_env": [],
+            "pending_setup": None,
+            "message": f"{server_id} ya estaba listo.",
+        }
+
+    normalized = normalize_module_setup_values(
+        values,
+        module_name=server_id,
+        specs=list(before_contract.specs),
+    )
+
+    merged = _load_config()
+    merged_mcp = dict(merged.get("mcp") or {})
+    merged_servers = dict(merged_mcp.get("servers") or {})
+    merged_server = dict(merged_servers.get(server_id) or {})
+    merged_env = dict(merged_server.get("env") or {})
+    previous_saved = set(str(key) for key in merged_env.keys())
+    merged_env.update(normalized.get("values") or {})
+    merged_server["env"] = merged_env
+    merged_servers[server_id] = merged_server
+    merged_mcp["servers"] = merged_servers
+    merged["mcp"] = merged_mcp
+
+    after_contract = contract_from_mcp_server(server_id, merged_server, overlay=overlay)
+    after_pending = pending_setup_from_contract(after_contract)
+    current_saved = set(str(key) for key in merged_env.keys())
+    saved_env = sorted(current_saved - previous_saved)
+
+    validation_errors = normalized.get("errors") or {}
+    if validation_errors and not saved_env:
+        return {
+            "status": "error",
+            "server_id": server_id,
+            "saved_env": [],
+            "pending_setup": before_pending,
+            "errors": validation_errors,
+            "message": "No guardé esos datos porque el formato no es válido todavía.",
+        }
+
+    _config = _merge_save_config({"mcp": merged_mcp})
+
+    if _brain is not None:
+        await _restart_mcp_runtime()
+        refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, active_channels=["web"])
+        reload_runtime_personality_surface(_brain, config=_config, pkg_dir=PKG_DIR)
+        await broadcast_awareness()
+
+    if after_pending is None:
+        message = f"Listo, {server_id} ya quedó listo para usar."
+    else:
+        remaining = len(after_pending.get("env_specs") or [])
+        if remaining:
+            message = f"Guardé lo válido, pero todavía necesito {remaining} dato{'s' if remaining != 1 else ''} para {server_id}."
+        else:
+            message = f"Guardé los datos, pero {server_id} todavía no quedó listo."
+
+    if validation_errors:
+        message = f"{message} También rechacé algunos valores por formato inválido."
+
+    return {
+        "status": "ok" if not validation_errors else "partial",
+        "server_id": server_id,
         "saved_env": saved_env,
         "pending_setup": after_pending,
         "errors": validation_errors,
@@ -523,6 +637,9 @@ async def _refresh_runtime_from_config(previous_config: dict | None = None) -> b
 
     if isinstance(getattr(_brain, "module_manager", None), ModuleRuntimeManager):
         _brain.module_manager.config = _config
+
+    if getattr(_brain, "mcp_manager", None) is not None:
+        await _restart_mcp_runtime()
 
     refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, active_channels=["web"])
 
@@ -1800,8 +1917,25 @@ async def api_status(request: Request):
             "pending": sum(
                 1
                 for cap in capabilities
+                if cap.get("kind") == "module"
+                and (cap.get("metadata") or {}).get("pending_setup")
+            ),
+        },
+        "artifact_setup": {
+            "pending": sum(
+                1
+                for cap in capabilities
                 if (cap.get("metadata") or {}).get("pending_setup")
             ),
+            "by_kind": {
+                kind: sum(
+                    1
+                    for cap in capabilities
+                    if cap.get("kind") == kind
+                    and (cap.get("metadata") or {}).get("pending_setup")
+                )
+                for kind in ("module", "mcp")
+            },
         },
         "ready": len(registry.ready()) if registry else 0,
         "gaps": len(registry.gaps()) if registry else 0,
