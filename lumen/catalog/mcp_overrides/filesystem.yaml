@@ -1,0 +1,8 @@
+display_name: "Filesystem"
+doc_url: "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem"
+env:
+  - name: ALLOWED_DIRS
+    label: "Directorios permitidos"
+    hint: "Rutas absolutas separadas por coma. Ejemplo: /home/user/projects,/tmp/workspace"
+    secret: false
+    expected_type: "text"

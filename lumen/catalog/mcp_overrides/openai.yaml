@@ -1,0 +1,11 @@
+display_name: "OpenAI"
+doc_url: "https://platform.openai.com/docs/api-reference"
+env:
+  - name: OPENAI_API_KEY
+    label: "OpenAI API key"
+    hint: "Copiala desde https://platform.openai.com/api-keys."
+    secret: true
+    pattern: "sk-[A-Za-z0-9]{40,}"
+    format_guidance: "Empieza con `sk-` seguido de 40+ caracteres."
+    examples:
+      - "sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz01234567890AbCd"
