@@ -113,7 +113,7 @@ def contract_from_native_manifest(
     if not specs:
         return None
 
-    pending = missing_env_specs(specs, config or {})
+    pending = missing_env_specs(specs, config or {}, module_name=module_name)
     display = str(
         manifest.get("display_name")
         or manifest.get("name")

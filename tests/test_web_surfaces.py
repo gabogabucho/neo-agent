@@ -77,6 +77,11 @@ class WebSurfaceTests(unittest.TestCase):
         self.original_idle_timeout = web.session_manager.idle_timeout_seconds
         web.LUMEN_DIR = Path(self.temp_dir.name)
         web.CONFIG_PATH = web.LUMEN_DIR / "config.yaml"
+        # Point secrets store to temp dir so tests don't write to real ~/.lumen
+        from lumen.core import secrets_store
+        self.original_secrets_lumen_dir = secrets_store.LUMEN_DIR
+        self.original_secrets_path = secrets_store.SECRETS_PATH
+        secrets_store.configure_paths(lumen_dir=web.LUMEN_DIR)
         web.configure_access_mode("run")
         web._brain = None
         web._config = {}
@@ -90,6 +95,9 @@ class WebSurfaceTests(unittest.TestCase):
         self.temp_dir.cleanup()
         web.LUMEN_DIR = self.original_lumen_dir
         web.CONFIG_PATH = self.original_config_path
+        from lumen.core import secrets_store
+        secrets_store.LUMEN_DIR = self.original_secrets_lumen_dir
+        secrets_store.SECRETS_PATH = self.original_secrets_path
         web._access_mode = self.original_access_mode
         web._brain = self.original_brain
         web._config = self.original_config
@@ -285,6 +293,9 @@ class WebSurfaceTests(unittest.TestCase):
             },
         )
         self.assertEqual(web._config["secrets"]["pending-module"]["DEMO_TOKEN"], "super-secret-token")
+        # Verify secrets also persisted to dedicated store
+        from lumen.core.secrets_store import load_module
+        self.assertEqual(load_module("pending-module")["DEMO_TOKEN"], "super-secret-token")
         self.assertTrue(sync_mock.await_count == 1)
         refresh_mock.assert_called_once()
         reload_mock.assert_called_once()
@@ -402,6 +413,8 @@ class WebSurfaceTests(unittest.TestCase):
             saved["secrets"]["pending-module"],
             {"DEMO_TOKEN": "token-READY"},
         )
+        from lumen.core.secrets_store import load_module
+        self.assertEqual(load_module("pending-module")["DEMO_TOKEN"], "token-READY")
 
     def test_flow_action_persists_mcp_setup_and_restarts_runtime(self):
         web._brain = BrainStub()

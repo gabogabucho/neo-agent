@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lumen — Set owner password</title>
+  {% include "_partials/tokens.html" %}
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      font-family: var(--lumen-font);
+      background: var(--lumen-paper);
+      color: var(--lumen-ink);
+      padding: 24px;
+    }
+    .card {
+      width: 100%;
+      max-width: 420px;
+      background: var(--lumen-surface);
+      border: 1px solid var(--lumen-line);
+      border-radius: var(--lumen-r-md);
+      padding: 28px;
+      box-shadow: var(--lumen-shadow);
+    }
+    h1 { margin: 0 0 10px; font-size: 28px; }
+    p { margin: 0 0 20px; color: var(--lumen-ink-soft); line-height: 1.6; }
+    label { display: block; margin-bottom: 8px; font-size: 13px; color: var(--lumen-ink-soft); }
+    input {
+      width: 100%;
+      padding: 14px 16px;
+      border-radius: var(--lumen-r-sm);
+      border: 1px solid var(--lumen-line);
+      background: var(--lumen-paper);
+      font: inherit;
+      margin-bottom: 14px;
+    }
+    button {
+      width: 100%;
+      padding: 12px 16px;
+      border: none;
+      border-radius: var(--lumen-r-pill);
+      background: var(--lumen-ink);
+      color: var(--lumen-paper);
+      font: inherit;
+      cursor: pointer;
+    }
+    .error {
+      display: none;
+      margin-bottom: 12px;
+      color: var(--lumen-danger);
+      font-size: 13px;
+    }
+    .divider {
+      border: none;
+      border-top: 1px solid var(--lumen-line);
+      margin: 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Lumen</h1>
+    <p>Tu Lumen ya está configurado. Para protegerlo en modo servidor, creá una contraseña de owner.</p>
+    <div class="error" id="error"></div>
+    <label for="token">Setup token (mostrado en la terminal)</label>
+    <input id="token" type="password" autocomplete="one-time-code" placeholder="lumen-setup-token">
+    <hr class="divider">
+    <label for="secret">Nueva contraseña de owner</label>
+    <input id="secret" type="password" autocomplete="new-password" placeholder="Mínimo 4 caracteres">
+    <label for="secret-confirm">Confirmar contraseña</label>
+    <input id="secret-confirm" type="password" autocomplete="new-password" placeholder="Repetí la contraseña">
+    <button id="submit">Crear y entrar</button>
+  </div>
+  <script>
+    const tokenInput = document.getElementById('token');
+    const secretInput = document.getElementById('secret');
+    const confirmInput = document.getElementById('secret-confirm');
+    const errorEl = document.getElementById('error');
+    function showError(msg) {
+      errorEl.textContent = msg;
+      errorEl.style.display = 'block';
+    }
+    async function submit() {
+      errorEl.style.display = 'none';
+      const token = tokenInput.value.trim();
+      const secret = secretInput.value;
+      const confirm = confirmInput.value;
+      if (!token) { showError('Ingresá el setup token de la terminal.'); return; }
+      if (!secret) { showError('Ingresá una contraseña.'); return; }
+      if (secret !== confirm) { showError('Las contraseñas no coinciden.'); return; }
+      if (secret.length < 4) { showError('La contraseña debe tener al menos 4 caracteres.'); return; }
+      const res = await fetch('/api/setup/owner', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, owner_secret: secret }),
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        window.location.href = '/';
+        return;
+      }
+      const messages = {
+        invalid_setup_token: 'Token inválido. Copialo de la terminal donde corre lumen serve.',
+        owner_already_set: 'Ya existe una contraseña de owner. Usá /login.',
+        password_too_short: 'La contraseña debe tener al menos 4 caracteres.',
+        token_and_password_required: 'Completá todos los campos.',
+      };
+      showError(messages[data.error] || data.error || 'Error al crear la contraseña.');
+    }
+    document.getElementById('submit').addEventListener('click', submit);
+    [tokenInput, secretInput, confirmInput].forEach(el => {
+      el.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+    });
+  </script>
+</body>
+</html>

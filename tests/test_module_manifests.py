@@ -25,6 +25,19 @@ def _zip_bytes(entries: dict[str, str]) -> bytes:
 
 
 class ModuleManifestResolutionTests(unittest.TestCase):
+    def setUp(self):
+        from lumen.core import secrets_store
+        self._orig_lumen_dir = secrets_store.LUMEN_DIR
+        self._orig_secrets_path = secrets_store.SECRETS_PATH
+        secrets_store.configure_paths(lumen_dir=Path(tempfile.mkdtemp()))
+
+    def tearDown(self):
+        from lumen.core import secrets_store
+        import shutil
+        shutil.rmtree(str(secrets_store.LUMEN_DIR), ignore_errors=True)
+        secrets_store.LUMEN_DIR = self._orig_lumen_dir
+        secrets_store.SECRETS_PATH = self._orig_secrets_path
+
     def test_module_yaml_is_preferred_over_manifest_yaml(self):
         with tempfile.TemporaryDirectory() as tmp:
             pkg_dir = Path(tmp)

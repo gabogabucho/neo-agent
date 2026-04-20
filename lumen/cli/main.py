@@ -1,22 +1,60 @@
-"""Lumen CLI — install, run, status. The bootstrapper, not the experience."""
+"""Lumen CLI — the bootstrapper, not the experience."""
 
 import asyncio
 import os
 import sys
-import time
 import webbrowser
 from pathlib import Path
 
 import typer
 import yaml
-from rich.align import Align
 from rich.console import Console
-from rich.live import Live
 from rich.panel import Panel
 from rich.prompt import Prompt
 
+from lumen import __version__
 from lumen.core.registry import CapabilityKind
 from lumen.core.runtime import bootstrap_runtime
+
+BRAND = "#3d3d6d"
+BRAND_DIM = "#6b6baa"
+
+LUMEN_BANNER = r"""
+                ▄
+        ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+    ▄▄▄▄▄▄▄▄▄▄███████▄▄▄▄▄▄▄▄▄
+   ▄▄▄▄▄▄▄▄▄█▄▄▄▄▄▄▄██▄▄▄▄▄▄▄▄▄▄
+ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄███▄█▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+▄▄▄▄▄▄▄▄▄▄█▄▄▄█████▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+▄▄▄▄▄▄▄▄▄▄█▄▄▄█████▄▄▄█▄▄▄▄▄▄▄▄▄▄▄▄
+  ▄▄▄▄▄▄▄▄▄█▄▄▄▄▄▄▄▄█▄▄▄▄▄▄▄▄▄▄
+    ▄▄▄▄▄▄▄▄▄██▄▄▄█▄▄▄▄▄▄▄▄▄
+       ▄▄▄▄▄▄▄▄▄▄▄▄▄▄█▄▄▄
+          ▄▄▄▄▄▄▄▄▄▄▄▄▄
+                ▀
+
+   _     _   _  __  __  _____  _   _
+  | |   | | | ||  \/  ||  ___|| \ | |
+  | |   | | | || \  / || |__  |  \| |
+  | |   | | | || |\/| ||  __| | . ` |
+  | |___| |_| || |  | || |___ | |\  |
+  |_____|\___/ |_|  |_||_____||_| \_|
+"""
+
+LUMEN_DIR = Path.home() / ".lumen"
+CONFIG_PATH = LUMEN_DIR / "config.yaml"
+PKG_DIR = Path(__file__).parent.parent
+
+app = typer.Typer(
+    name="lumen",
+    help="Lumen — Open-source AI agent engine.",
+    no_args_is_help=False,
+    rich_markup_mode="rich",
+)
+console = Console()
+
+
+# ── helpers ──────────────────────────────────────────────────────────────────
 
 
 def _load_persisted_config() -> dict:
@@ -50,47 +88,189 @@ def _prepare_runtime_if_configured(config: dict | None = None):
     return runtime, loaded
 
 
-app = typer.Typer(
-    name="lumen",
-    help="Lumen — Open-source AI agent engine. Modular. No limits.",
-    no_args_is_help=True,
-)
-console = Console()
-
-LUMEN_DIR = Path.home() / ".lumen"
-CONFIG_PATH = LUMEN_DIR / "config.yaml"
-PKG_DIR = Path(__file__).parent.parent
-
-
 def _supports_unicode() -> bool:
     encoding = (sys.stdout.encoding or "").lower()
     return "utf" in encoding
 
 
-def render_eye_boot():
-    """Show a tiny Lumen eye boot animation before the panel."""
-    if not console.is_terminal:
-        return
+def _render_landing():
+    """Show Lumen landing: banner + status + commands."""
+    config = _load_persisted_config()
+    configured = _is_runtime_configured(config)
 
-    if not _supports_unicode():
-        console.print("[bold #3d3dd6](o)[/bold #3d3dd6]")
-        return
+    # Banner
+    if _supports_unicode():
+        console.print(f"[bold {BRAND}]{LUMEN_BANNER}[/bold {BRAND}]")
+    else:
+        console.print(f"[bold {BRAND}](o) LUMEN[/bold {BRAND}]")
 
-    frames = [
-        "      ·\n",
-        "      ·\n   ╭──┴──╮\n   │  ●  │\n   ╰──┬──╯\n      ·",
-        "   ◌─────◌\n   ╱  ◉  ╲\n ◌───────◌\n   ╲     ╱\n    ◌───◌",
-    ]
+    console.print(f"  Open-source AI agent engine  [dim]v{__version__}[/dim]")
+    console.print()
 
-    with Live(console=console, refresh_per_second=12, transient=True) as live:
-        for frame in frames:
-            live.update(Align.center(f"[bold #3d3dd6]{frame}[/bold #3d3dd6]"))
-            time.sleep(0.2)
+    # Status
+    if configured:
+        mcp = config.get("mcp") or {}
+        mcp_count = len(mcp.get("servers", {}))
+        console.print(f"  [bold]Model[/bold]    {config.get('model', '—')}")
+        console.print(f"  [bold]Language[/bold] {config.get('language', 'en')}")
+        console.print(f"  [bold]MCP[/bold]      {mcp_count} servers")
+        console.print(f"  [bold]Config[/bold]   {CONFIG_PATH}")
+    else:
+        console.print(f"  [dim]Not configured.[/dim] Run [bold]lumen run[/bold] to start the setup wizard.")
+
+    console.print()
+    console.print(f"  [bold {BRAND}]Commands[/bold {BRAND}]")
+    console.print(f"  [bold]run[/bold]      Start dashboard locally")
+    console.print(f"  [bold]server[/bold]   Start in server mode")
+    console.print(f"  [bold]update[/bold]   Check for updates")
+    console.print(f"  [bold]doctor[/bold]   Diagnose and fix issues")
+    console.print()
+    console.print(f"  [dim]lumen <command> --help for details[/dim]")
+
+
+# ── landing (no args) ────────────────────────────────────────────────────────
+
+
+@app.callback(invoke_without_command=True)
+def _main(ctx: typer.Context):
+    if ctx.invoked_subcommand is None:
+        _render_landing()
+
+
+# ── commands ─────────────────────────────────────────────────────────────────
+
+
+@app.command()
+def run(
+    port: int = typer.Option(3000, help="Dashboard port"),
+):
+    """Start Lumen — opens the dashboard in your browser.
+
+    If Lumen is not configured yet, the browser will show the setup wizard.
+    """
+    from lumen.channels.web import app as web_app, configure, configure_access_mode
+
+    configure_access_mode("run")
+
+    config = _load_persisted_config()
+    runtime, config = _prepare_runtime_if_configured(config)
+
+    if runtime is not None:
+        configure(runtime.brain, runtime.locale, runtime.config, awareness=runtime.awareness)
+        use_port = port or config.get("port", 3000)
+        lang = config.get("language", "en")
+        mcp_count = len(runtime.brain.registry.list_by_kind(CapabilityKind.MCP))
+
+        console.print(
+            Panel(
+                f"[bold cyan]Lumen[/bold cyan] is running\n\n"
+                f"  Dashboard:  [link]http://localhost:{use_port}[/link]\n"
+                f"  Model:      {config.get('model')}\n"
+                f"  Language:   {lang}\n"
+                f"  Flows:      {len(runtime.brain.flows)}\n"
+                f"  MCP:        {mcp_count}",
+                title="Lumen",
+                expand=False,
+                border_style=BRAND,
+            )
+        )
+    else:
+        use_port = port
+        console.print(
+            Panel(
+                f"[bold cyan]Lumen[/bold cyan] — First time setup\n\n"
+                f"  Opening [link]http://localhost:{use_port}[/link]\n"
+                f"  Follow the setup wizard in your browser.",
+                title="Lumen",
+                expand=False,
+                border_style=BRAND,
+            )
+        )
+
+    webbrowser.open(f"http://localhost:{use_port}")
+
+    import uvicorn
+
+    uvicorn.run(web_app, host="0.0.0.0", port=use_port, log_level="warning")
+
+
+@app.command()
+def server(
+    host: str = typer.Option("0.0.0.0", help="Server bind host"),
+    port: int = typer.Option(3000, help="Server bind port"),
+):
+    """Start Lumen in hosted/server mode with authenticated access."""
+    from lumen.channels.web import (
+        app as web_app,
+        configure,
+        configure_access_mode,
+        ensure_server_bootstrap,
+    )
+
+    configure_access_mode("serve")
+
+    config = _load_persisted_config()
+    runtime, config = _prepare_runtime_if_configured(config)
+    if runtime is not None:
+        configure(runtime.brain, runtime.locale, runtime.config, awareness=runtime.awareness)
+
+    setup_token = ensure_server_bootstrap(host=host, port=port)
+    current = _load_persisted_config()
+    has_owner_secret = bool(current.get("owner_secret_hash"))
+
+    display_host = "localhost" if host in ("0.0.0.0", "::") else host
+    body = f"[bold cyan]Lumen[/bold cyan] server mode\n\n  Dashboard:  [link]http://{display_host}:{port}[/link]"
+    if not _is_runtime_configured(current):
+        body += f"\n  Auth:       setup token required"
+        body += f"\n  Setup token: [bold]{setup_token}[/bold]\n\n  Open /setup and enter this one-time token to begin onboarding."
+    elif not has_owner_secret:
+        body += f"\n  Auth:       owner password setup required"
+        body += f"\n  Setup token: [bold]{setup_token}[/bold]\n\n  Open /login and enter this token to create your owner password."
+    else:
+        body += f"\n  Auth:       owner login required"
+        body += "\n\n  Open /login and sign in with the owner password or PIN."
+
+    console.print(
+        Panel(
+            body,
+            title="Lumen",
+            expand=False,
+            border_style=BRAND,
+        )
+    )
+
+    import uvicorn
+
+    uvicorn.run(web_app, host=host, port=port, log_level="warning")
+
+
+@app.command()
+def status():
+    """Show Lumen's current configuration and health."""
+    config = _load_persisted_config()
+    if not _is_runtime_configured(config):
+        console.print("[red]Lumen is not installed.[/red]")
+        console.print("Run [bold]lumen run[/bold] to start the setup wizard.")
+        raise typer.Exit(1)
+
+    mcp = config.get("mcp") or {}
+    console.print(
+        Panel(
+            f"Model:     {config.get('model', 'not set')}\n"
+            f"Language:  {config.get('language', 'en')}\n"
+            f"Port:      {config.get('port', 3000)}\n"
+            f"MCP:       {len(mcp.get('servers', {}))} servers\n"
+            f"Config:    {CONFIG_PATH}",
+            title="Lumen — Status",
+            expand=False,
+            border_style=BRAND,
+        )
+    )
 
 
 @app.command()
 def install():
-    """Set up Lumen for the first time."""
+    """Set up Lumen for the first time (CLI-based)."""
     console.print(
         Panel(
             "[bold cyan]Lumen[/bold cyan] — First time setup",
@@ -162,130 +342,41 @@ def install():
 
 
 @app.command()
-def run(
-    port: int = typer.Option(3000, help="Dashboard port"),
-):
-    """Start Lumen — opens the dashboard in your browser.
+def update():
+    """Check for updates and install if available."""
+    import importlib.metadata
 
-    If Lumen is not configured yet, the browser will show the setup wizard.
-    No 'neo install' needed — the web handles everything.
-    """
-    from lumen.channels.web import app as web_app, configure, configure_access_mode
+    current = __version__
+    console.print(f"  Current version: [bold]{current}[/bold]")
+    console.print("[dim]  Checking for updates...[/dim]")
 
-    render_eye_boot()
-    configure_access_mode("run")
+    try:
+        import subprocess
 
-    # If config exists, pre-initialize brain (faster first page load)
-    config = _load_persisted_config()
-    runtime, config = _prepare_runtime_if_configured(config)
-
-    if runtime is not None:
-        configure(runtime.brain, runtime.locale, runtime.config, awareness=runtime.awareness)
-        use_port = port or config.get("port", 3000)
-        lang = config.get("language", "en")
-        mcp_count = len(runtime.brain.registry.list_by_kind(CapabilityKind.MCP))
-
-        console.print(
-            Panel(
-                f"[bold cyan]Lumen[/bold cyan] is running\n\n"
-                f"  Dashboard:  [link]http://localhost:{use_port}[/link]\n"
-                f"  Model:      {config.get('model')}\n"
-                f"  Language:   {lang}\n"
-                f"  Flows:      {len(runtime.brain.flows)}\n"
-                f"  MCP:        {mcp_count}",
-                title="Lumen",
-                expand=False,
-                border_style="#3d3dd6",
-            )
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "index", "versions", "lumen-agent"],
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
-    else:
-        use_port = port
-        console.print(
-            Panel(
-                f"[bold cyan]Lumen[/bold cyan] — First time setup\n\n"
-                f"  Opening [link]http://localhost:{use_port}[/link]\n"
-                f"  Follow the setup wizard in your browser.",
-                title="Lumen",
-                expand=False,
-                border_style="#3d3dd6",
-            )
-        )
-
-    webbrowser.open(f"http://localhost:{use_port}")
-
-    import uvicorn
-
-    uvicorn.run(web_app, host="0.0.0.0", port=use_port, log_level="warning")
+        if result.returncode == 0 and "lumen-agent" in result.stdout:
+            # Parse latest version from pip index output
+            versions_line = result.stdout.strip()
+            console.print(f"  [dim]{versions_line}[/dim]")
+            console.print(f"  [green]You're on the latest version.[/green]")
+        else:
+            console.print("  [dim]Could not check for updates (not installed via pip).[/dim]")
+            console.print("  [dim]If running from source, pull the latest from git.[/dim]")
+    except Exception:
+        console.print("  [dim]Could not reach PyPI. Check your connection.[/dim]")
 
 
 @app.command()
-def serve(
-    host: str = typer.Option("0.0.0.0", help="Server bind host"),
-    port: int = typer.Option(3000, help="Server bind port"),
-):
-    """Start Lumen in hosted/server mode with authenticated access."""
-    from lumen.channels.web import (
-        app as web_app,
-        configure,
-        configure_access_mode,
-        ensure_server_bootstrap,
-    )
+def doctor():
+    """Diagnose issues and attempt automatic fixes."""
+    from lumen.cli.doctor import run_doctor
 
-    render_eye_boot()
-    configure_access_mode("serve")
-
-    config = _load_persisted_config()
-    runtime, config = _prepare_runtime_if_configured(config)
-    if runtime is not None:
-        configure(runtime.brain, runtime.locale, runtime.config, awareness=runtime.awareness)
-
-    setup_token = ensure_server_bootstrap(host=host, port=port)
-    current = _load_persisted_config()
-
-    body = (
-        f"[bold cyan]Lumen[/bold cyan] server mode\n\n"
-        f"  Dashboard:  [link]http://{host}:{port}[/link]\n"
-        f"  Auth:       {'owner login required' if _is_runtime_configured(current) else 'setup token required'}"
-    )
-    if not _is_runtime_configured(current):
-        body += f"\n  Setup token: [bold]{setup_token}[/bold]\n\n  Open /setup and enter this one-time token to begin onboarding."
-    else:
-        body += "\n\n  Open /login and sign in with the owner password or PIN."
-
-    console.print(
-        Panel(
-            body,
-            title="Lumen",
-            expand=False,
-            border_style="#3d3dd6",
-        )
-    )
-
-    import uvicorn
-
-    uvicorn.run(web_app, host=host, port=port, log_level="warning")
-
-
-@app.command()
-def status():
-    """Show Lumen's current configuration."""
-    config = _load_persisted_config()
-    if not _is_runtime_configured(config):
-        console.print("[red]Lumen is not installed.[/red]")
-        raise typer.Exit(1)
-
-    console.print(
-        Panel(
-            f"Model:     {config.get('model', 'not set')}\n"
-            f"Language:  {config.get('language', 'en')}\n"
-            f"Port:      {config.get('port', 3000)}\n"
-            f"MCP:       {len((config.get('mcp') or {}).get('servers', {}))}\n"
-            f"Config:    {CONFIG_PATH}",
-            title="Lumen — Status",
-            expand=False,
-            border_style="#3d3dd6",
-        )
-    )
+    run_doctor()
 
 
 if __name__ == "__main__":

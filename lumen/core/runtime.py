@@ -10,6 +10,7 @@ import yaml
 
 from lumen.core.awareness import CapabilityAwareness
 from lumen.core.artifact_setup import collect_pending_artifact_setup_flows
+from lumen.core.secrets_store import migrate_from_config
 from lumen.core.brain import Brain
 from lumen.core.catalog import Catalog
 from lumen.core.connectors import ConnectorRegistry
@@ -139,6 +140,21 @@ async def bootstrap_runtime(
     """Build a full Lumen runtime from config data."""
     active_channels = active_channels or ["web"]
 
+    # Migrate secrets from config.yaml to secrets.yaml (one-time)
+    config, _migrated = _migrate_secrets(config)
+
+    # Hydrate config["secrets"] from the store so resolve_setting works
+    from lumen.core.secrets_store import load_all as _load_all_secrets
+    all_secrets = _load_all_secrets()
+    if all_secrets:
+        existing = config.get("secrets") or {}
+        if not isinstance(existing, dict):
+            existing = {}
+        for mod_name, bucket in all_secrets.items():
+            if isinstance(bucket, dict):
+                existing.setdefault(mod_name, {}).update(bucket)
+        config["secrets"] = existing
+
     if config.get("api_key") and config.get("api_key_env"):
         os.environ[config["api_key_env"]] = config["api_key"]
 
@@ -232,6 +248,20 @@ async def bootstrap_runtime(
         awareness=awareness,
         integration_summary=awareness.peek_summary(),
     )
+
+
+def _migrate_secrets(config: dict) -> tuple[dict, list[str]]:
+    """One-time migration of secrets from config.yaml to secrets.yaml."""
+    config, migrated = migrate_from_config(config)
+    if migrated:
+        from pathlib import Path
+        config_path = Path.home() / ".lumen" / "config.yaml"
+        if config_path.exists():
+            config_path.write_text(
+                yaml.dump(config, default_flow_style=False),
+                encoding="utf-8",
+            )
+    return config, migrated
 
 
 def _resolve_active_personality_module(

@@ -32,6 +32,8 @@ from lumen.core.artifact_setup import (
     parse_artifact_action,
     pending_setup_from_contract,
 )
+from lumen.core.secrets_store import load_module as load_secrets_for_module
+from lumen.core.secrets_store import save_module as save_secrets_for_module
 from lumen.core.registry import CapabilityKind
 from lumen.core.runtime import (
     bootstrap_runtime,
@@ -186,8 +188,8 @@ async def _persist_module_setup_slots(module_name: str, values: dict | None) -> 
         module_dir=module_dir,
     )
     previous_saved = set((((_config.get("secrets") or {}).get(module_name) or {}).keys()))
-    current_saved = set((((merged.get("secrets") or {}).get(module_name) or {}).keys()))
-    saved_env = sorted(current_saved - previous_saved)
+    module_secrets = (merged.get("secrets") or {}).get(module_name) or {}
+    saved_env = sorted(set(module_secrets.keys()) - previous_saved)
 
     validation_errors = normalized.get("errors") or {}
     if validation_errors and not saved_env:
@@ -200,6 +202,9 @@ async def _persist_module_setup_slots(module_name: str, values: dict | None) -> 
             "message": "No guardé esos datos porque el formato no es válido todavía.",
         }
 
+    # Persist secrets to dedicated store AND config (migration cleans config later)
+    if module_secrets:
+        save_secrets_for_module(module_name, module_secrets)
     _config = _merge_save_config({"secrets": merged.get("secrets", {})})
 
     if _brain is not None:
@@ -360,6 +365,18 @@ def _load_config() -> dict:
     if entry_path in LEGACY_ENTRY_PATH_MAP:
         loaded["entry_path"] = LEGACY_ENTRY_PATH_MAP[entry_path]
 
+    # Merge secrets from store into in-memory config["secrets"]
+    from lumen.core.secrets_store import load_all as load_all_secrets
+    all_secrets = load_all_secrets()
+    if all_secrets:
+        existing = loaded.get("secrets") or {}
+        if not isinstance(existing, dict):
+            existing = {}
+        for mod_name, bucket in all_secrets.items():
+            if isinstance(bucket, dict):
+                existing.setdefault(mod_name, {}).update(bucket)
+        loaded["secrets"] = existing
+
     return loaded
 
 
@@ -516,7 +533,8 @@ def ensure_server_bootstrap(*, host: str = "0.0.0.0", port: int = 3000) -> str:
     }
 
     token = secrets.token_urlsafe(18)
-    if not _is_configured(loaded):
+    needs_setup_token = not _is_configured(loaded) or not loaded.get("owner_secret_hash")
+    if needs_setup_token:
         updates["setup_token_hash"] = _hash_secret(token)
 
     _merge_save_config(updates)
@@ -1140,6 +1158,8 @@ async def login_page(request: Request):
         return RedirectResponse(url="/")
     if _request_has_owner_access(request, loaded):
         return RedirectResponse(url="/")
+    if not loaded.get("owner_secret_hash"):
+        return templates.TemplateResponse(request, "owner_setup.html")
     return templates.TemplateResponse(request, "login.html")
 
 
@@ -1201,6 +1221,45 @@ async def api_login(request: Request):
 async def api_logout():
     response = JSONResponse(content={"status": "ok"})
     response.delete_cookie(AUTH_COOKIE_NAME)
+    return response
+
+
+@app.post("/api/setup/owner")
+async def api_setup_owner(request: Request):
+    """Create owner password for run→serve transition. Requires setup token."""
+    loaded = _load_config()
+    if not _is_serve_mode() or not _is_configured(loaded):
+        return JSONResponse(status_code=400, content={"status": "error", "error": "not_available"})
+    if loaded.get("owner_secret_hash"):
+        return JSONResponse(status_code=400, content={"status": "error", "error": "owner_already_set"})
+
+    body = await request.json()
+    token = str(body.get("token") or "").strip()
+    owner_secret = str(body.get("owner_secret") or "").strip()
+
+    if not token or not owner_secret:
+        return JSONResponse(status_code=400, content={"status": "error", "error": "token_and_password_required"})
+
+    if not _verify_secret(token, loaded.get("setup_token_hash")):
+        return JSONResponse(status_code=401, content={"status": "error", "error": "invalid_setup_token"})
+
+    if len(owner_secret) < 4:
+        return JSONResponse(status_code=400, content={"status": "error", "error": "password_too_short"})
+
+    _merge_save_config(
+        {"owner_secret_hash": _hash_secret(owner_secret)},
+        removals={"setup_token_hash"},
+    )
+
+    response = JSONResponse(content={"status": "ok"})
+    response.set_cookie(
+        AUTH_COOKIE_NAME,
+        _issue_cookie("owner", _server_secret(_load_config()) or secrets.token_urlsafe(32)),
+        httponly=True,
+        samesite="lax",
+        max_age=COOKIE_MAX_AGE_SECONDS,
+    )
+    response.delete_cookie(SETUP_COOKIE_NAME)
     return response
 
 
