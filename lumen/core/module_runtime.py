@@ -272,3 +272,90 @@ class ModuleRuntimeManager:
         self._loaded[name] = LoadedModuleRuntime(
             module=module, context=context, state=result
         )
+
+        # Gateway modules: detect from manifest and wire to inbox automatically.
+        # The module only needs to implement send() and push incoming messages
+        # to context.inbox. The framework handles adapter registration and
+        # inbox consumer routing.
+        gateway_cfg = _gateway_config(context.manifest)
+        if gateway_cfg and context.inbox is not None:
+            channel_id = gateway_cfg["channel"]
+            send_fn = getattr(result, "send", None) or getattr(module, "send", None)
+            if send_fn and callable(send_fn):
+                context.inbox.register_adapter(channel_id, send_fn)
+            _start_gateway_inbox_watcher(name, channel_id, context)
+
+
+def _gateway_config(manifest: dict[str, Any] | None) -> dict[str, str] | None:
+    """Extract gateway declaration from a module manifest, if present."""
+    if not isinstance(manifest, dict):
+        return None
+    x_lumen = manifest.get("x-lumen") or manifest.get("x_lumen") or {}
+    if not isinstance(x_lumen, dict):
+        return None
+    gateway = x_lumen.get("gateway")
+    if not isinstance(gateway, dict) or not gateway.get("channel"):
+        return None
+    return {"channel": str(gateway["channel"])}
+
+
+def _start_gateway_inbox_watcher(
+    module_name: str, channel_id: str, context: ModuleRuntimeContext
+) -> None:
+    """Watch the module's inbox.jsonl and push new lines to the unified inbox.
+
+    Gateway modules write incoming messages to their runtime_dir/inbox.jsonl
+    as JSONL — one JSON object per line. This watcher tails that file and
+    pushes each new entry to the unified Inbox, where the consumer routes
+    it through brain.think().
+
+    This is a bridge pattern: modules stay simple (write to file), the
+    framework handles the routing. When modules are updated to push to
+    context.inbox directly, this watcher becomes unnecessary.
+    """
+    inbox = context.inbox
+    if inbox is None:
+        return
+
+    from lumen.core.inbox import IncomingMessage
+
+    inbox_path = context.runtime_dir / "inbox.jsonl"
+    inbox_path.parent.mkdir(parents=True, exist_ok=True)
+    if not inbox_path.exists():
+        inbox_path.touch()
+
+    async def _watch():
+        offset = inbox_path.stat().st_size
+        while True:
+            await asyncio.sleep(1)
+            try:
+                new_size = inbox_path.stat().st_size
+            except OSError:
+                break
+            if new_size <= offset:
+                continue
+            with inbox_path.open("r", encoding="utf-8") as f:
+                f.seek(offset)
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    sender_id = str(entry.get("chat_id") or entry.get("sender_id") or "")
+                    text = str(entry.get("text") or "")
+                    if sender_id and text:
+                        await inbox.push(
+                            IncomingMessage(
+                                channel=channel_id,
+                                sender_id=sender_id,
+                                text=text,
+                            )
+                        )
+                offset = f.tell()
+
+    import asyncio
+
+    asyncio.create_task(_watch(), name=f"gateway-watcher-{module_name}")
