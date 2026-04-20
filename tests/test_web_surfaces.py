@@ -686,7 +686,7 @@ class WebSurfaceTests(unittest.TestCase):
         token = web.ensure_server_bootstrap(host="0.0.0.0", port=3000)
         denied_setup = self.client.get(
             "/oauth/openrouter/start",
-            params={"model": "deepseek/deepseek-chat:free"},
+            params={"model": "openai/gpt-oss-120b:free"},
         )
         self.assertEqual(denied_setup.status_code, 401)
 
@@ -695,14 +695,14 @@ class WebSurfaceTests(unittest.TestCase):
 
         allowed_setup = self.client.get(
             "/oauth/openrouter/start",
-            params={"model": "deepseek/deepseek-chat:free"},
+            params={"model": "openai/gpt-oss-120b:free"},
             follow_redirects=False,
         )
         self.assertEqual(allowed_setup.status_code, 307)
 
         config = {
             "provider": "OpenRouter",
-            "model": "deepseek/deepseek-chat:free",
+            "model": "openai/gpt-oss-120b:free",
             "language": "en",
             "server_mode": True,
             "server_secret": "test-server-secret",
@@ -712,7 +712,7 @@ class WebSurfaceTests(unittest.TestCase):
         web._config = dict(config)
         web._oauth_state_store["state-protected"] = {
             "code_verifier": "verifier-protected",
-            "model": "deepseek/deepseek-chat:free",
+            "model": "openai/gpt-oss-120b:free",
             "language": "en",
             "port": 3000,
             "redirect_to": "/dashboard",
@@ -730,7 +730,7 @@ class WebSurfaceTests(unittest.TestCase):
 
         web._oauth_state_store["state-protected-2"] = {
             "code_verifier": "verifier-protected-2",
-            "model": "deepseek/deepseek-chat:free",
+            "model": "openai/gpt-oss-120b:free",
             "language": "en",
             "port": 3000,
             "redirect_to": "/dashboard",

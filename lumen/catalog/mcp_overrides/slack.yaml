@@ -1,0 +1,11 @@
+display_name: "Slack"
+doc_url: "https://github.com/modelcontextprotocol/servers/tree/main/src/slack"
+env:
+  - name: SLACK_BOT_TOKEN
+    label: "Slack bot token"
+    hint: "Bot OAuth token desde https://api.slack.com/apps (Bot User OAuth Token)."
+    secret: true
+    pattern: "xoxb-[0-9]{10,}-[0-9]{10,}-[A-Za-z0-9]{20,}"
+    format_guidance: "Empieza con `xoxb-`."
+    examples:
+      - "xoxb-XXXXXXXXXX-XXXXXXXXXXXX-XXXXXXXXXXXXXXXXXXXX"

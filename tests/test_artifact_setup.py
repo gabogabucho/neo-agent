@@ -220,6 +220,30 @@ class TestLoadMcpOverlay:
         pkg_dir = Path(__file__).resolve().parent.parent / "lumen"
         assert load_mcp_overlay("definitely-not-a-real-server", pkg_dir) is None
 
+    def test_loads_shipped_openai_overlay(self):
+        pkg_dir = Path(__file__).resolve().parent.parent / "lumen"
+        overlay = load_mcp_overlay("openai", pkg_dir)
+        assert overlay is not None
+        assert overlay["display_name"] == "OpenAI"
+        assert overlay["env"][0]["name"] == "OPENAI_API_KEY"
+        assert overlay["env"][0]["secret"] is True
+
+    def test_loads_shipped_filesystem_overlay(self):
+        pkg_dir = Path(__file__).resolve().parent.parent / "lumen"
+        overlay = load_mcp_overlay("filesystem", pkg_dir)
+        assert overlay is not None
+        assert overlay["display_name"] == "Filesystem"
+        assert overlay["env"][0]["name"] == "ALLOWED_DIRS"
+        assert overlay["env"][0]["secret"] is False
+
+    def test_loads_shipped_slack_overlay(self):
+        pkg_dir = Path(__file__).resolve().parent.parent / "lumen"
+        overlay = load_mcp_overlay("slack", pkg_dir)
+        assert overlay is not None
+        assert overlay["display_name"] == "Slack"
+        assert overlay["env"][0]["name"] == "SLACK_BOT_TOKEN"
+        assert overlay["env"][0]["secret"] is True
+
 
 class TestParseArtifactAction:
     def test_new_format(self):

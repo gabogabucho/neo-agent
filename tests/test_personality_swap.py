@@ -136,10 +136,10 @@ class PersonalitySwapTests(unittest.TestCase):
         
         # Verify active_personality is still B
         self.assertEqual(web._config["active_personality"], "personality-b")
-        
-        # Verify we refresh registry but do NOT reload personality surface
+
+        # Verify we refresh registry and reload personality surface
         web.refresh_runtime_registry.assert_called_once()
-        web.reload_runtime_personality_surface.assert_not_called()
+        web.reload_runtime_personality_surface.assert_called_once()
 
 class PersonalitySwapDiskTests(unittest.TestCase):
     """Validate that install/uninstall of NON-active personalities never rewrites
