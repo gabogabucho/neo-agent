@@ -18,7 +18,7 @@ x-lumen:
         pattern: "\\d{6,}:[A-Za-z0-9_-]{30,}"
         format_guidance: "Formato: dígitos:letras/guiones (ej. 123456789:AAE...abc_XYZ)."
         examples:
-          - "REDACTED_TELEGRAM_TOKEN"
+          - "<TU_TOKEN_AQUI>"
       - name: TELEGRAM_DEFAULT_CHAT_ID
         label: "Chat ID por defecto"
         hint: "Escribile a tu bot una vez y abrí https://api.telegram.org/bot<TU_TOKEN>/getUpdates — el chat.id es el número que aparece ahí."
