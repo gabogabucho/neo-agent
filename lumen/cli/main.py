@@ -147,15 +147,111 @@ def _main(ctx: typer.Context):
 # ── commands ─────────────────────────────────────────────────────────────────
 
 
+# ── CLI Twin Wizard ──────────────────────────────────────────────────────────
+
+WIZARD_PROVIDERS = {
+    "1": ("deepseek/deepseek-chat", "DeepSeek API key", True),
+    "2": ("openai/gpt-4o-mini", "OpenAI API key", True),
+    "3": ("anthropic/claude-sonnet-4-20250514", "Anthropic API key", True),
+    "4": ("ollama/llama3", None, False),
+    "5": ("openrouter/openai/gpt-oss-120b:free", None, False),
+}
+
+
+def _run_cli_wizard(*, lumen_dir: Path | None = None) -> dict:
+    """Run the onboarding wizard in the terminal.
+
+    Twin of the web wizard — same steps, terminal presentation.
+    Returns the config dict and saves config.yaml.
+
+    Steps:
+      1. Choose model provider
+      2. Enter API key (if needed)
+      3. Choose language
+      4. Save config.yaml
+    """
+    target_dir = lumen_dir or resolve_lumen_dir()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    config_path = target_dir / "config.yaml"
+
+    console.print()
+    console.print(Panel(
+        "[bold cyan]🔮 Bienvenido a Lumen[/bold cyan]\n\n"
+        "Vamos a configurar tu asistente.",
+        expand=False,
+        border_style=BRAND,
+    ))
+
+    # Step 1: Model provider
+    console.print("\n[bold]¿Qué modelo querés usar?[/bold]")
+    console.print("  1. DeepSeek (recomendado)")
+    console.print("  2. OpenAI GPT-4o-mini")
+    console.print("  3. Anthropic Claude")
+    console.print("  4. Ollama (local, sin API key)")
+    console.print("  5. OpenRouter (multi-model, tier gratuito)")
+
+    provider = Prompt.ask(
+        "\nElegí",
+        choices=["1", "2", "3", "4", "5"],
+        default="1",
+    )
+
+    model_info = WIZARD_PROVIDERS[provider]
+    model = model_info[0]
+    key_label = model_info[1]
+    needs_key = model_info[2]
+
+    # Step 2: API key
+    api_key = None
+    if needs_key and key_label:
+        api_key = Prompt.ask(f"\n{key_label}")
+
+    # Step 3: Language
+    lang = Prompt.ask(
+        "\nIdioma / Language",
+        choices=["es", "en", "pt"],
+        default="es",
+    )
+
+    # Step 4: Save
+    config = {
+        "language": lang,
+        "model": model,
+    }
+    if api_key:
+        config["api_key"] = api_key
+
+    config_path.write_text(yaml.dump(config, default_flow_style=False), encoding="utf-8")
+
+    # Summary
+    console.print()
+    console.print(Panel(
+        f"  Model:    [bold]{model}[/bold]\n"
+        f"  Language: [bold]{lang}[/bold]\n"
+        f"  Instance: [bold]{target_dir.name if target_dir.name != '.lumen' else 'default'}[/bold]\n"
+        f"  Config:   {config_path}",
+        title="[green]✓ Configuración guardada[/green]",
+        expand=False,
+        border_style="green",
+    ))
+
+    return config
+
+
+# ── command implementations ─────────────────────────────────────────────────
+
+
 @app.command()
 def run(
     port: int = typer.Option(3000, help="Dashboard port"),
     instance: str = typer.Option(None, "--instance", "-i", help="Named instance (isolated data dir)"),
     data_dir: str = typer.Option(None, "--data-dir", "-d", help="Custom data directory"),
+    no_wizard: bool = typer.Option(False, "--no-wizard", help="Skip wizard, error if no config (CI/CD)"),
 ):
     """Start Lumen — opens the dashboard in your browser.
 
-    If Lumen is not configured yet, the browser will show the setup wizard.
+    If Lumen is not configured yet, runs the CLI setup wizard automatically.
+    Use --no-wizard to skip wizard (useful for CI/CD).
     """
     from lumen.channels.web import app as web_app, configure, configure_access_mode
 
@@ -166,10 +262,19 @@ def run(
     configure_access_mode("run")
 
     config = _load_persisted_config(config_path)
+
+    # No config → run CLI wizard (unless --no-wizard)
+    if not _is_runtime_configured(config):
+        if no_wizard:
+            console.print("[red]No configuration found and --no-wizard is set.[/red]")
+            console.print("Create config.yaml manually or run without --no-wizard.")
+            raise typer.Exit(1)
+        config = _run_cli_wizard(lumen_dir=lumen_dir)
+
     runtime, config = _prepare_runtime_if_configured(config, lumen_dir=lumen_dir)
 
     if runtime is not None:
-        configure(runtime.brain, runtime.locale, runtime.config, awareness=runtime.awareness)
+        configure(runtime.brain, runtime.locale, runtime.config, awareness=runtime.awareness, lumen_dir=lumen_dir)
         use_port = port or config.get("port", 3000)
         lang = config.get("language", "en")
         mcp_count = len(runtime.brain.registry.list_by_kind(CapabilityKind.MCP))
@@ -180,6 +285,7 @@ def run(
                 f"  Dashboard:  [link]http://localhost:{use_port}[/link]\n"
                 f"  Model:      {config.get('model')}\n"
                 f"  Language:   {lang}\n"
+                f"  Instance:   {instance or 'default'}\n"
                 f"  Flows:      {len(runtime.brain.flows)}\n"
                 f"  MCP:        {mcp_count}",
                 title="Lumen",
@@ -213,6 +319,7 @@ def server(
     port: int = typer.Option(3000, help="Server bind port"),
     instance: str = typer.Option(None, "--instance", "-i", help="Named instance (isolated data dir)"),
     data_dir: str = typer.Option(None, "--data-dir", "-d", help="Custom data directory"),
+    no_wizard: bool = typer.Option(False, "--no-wizard", help="Skip wizard, error if no config (CI/CD)"),
 ):
     """Start Lumen in hosted/server mode with authenticated access."""
     from lumen.channels.web import (
@@ -229,9 +336,17 @@ def server(
     configure_access_mode("serve")
 
     config = _load_persisted_config(config_path)
+
+    # No config → run CLI wizard (unless --no-wizard)
+    if not _is_runtime_configured(config):
+        if no_wizard:
+            console.print("[red]No configuration found and --no-wizard is set.[/red]")
+            raise typer.Exit(1)
+        config = _run_cli_wizard(lumen_dir=lumen_dir)
+
     runtime, config = _prepare_runtime_if_configured(config, lumen_dir=lumen_dir)
     if runtime is not None:
-        configure(runtime.brain, runtime.locale, runtime.config, awareness=runtime.awareness)
+        configure(runtime.brain, runtime.locale, runtime.config, awareness=runtime.awareness, lumen_dir=lumen_dir)
 
     setup_token = ensure_server_bootstrap(host=host, port=port)
     current = _load_persisted_config(config_path)
@@ -264,9 +379,14 @@ def server(
 
 
 @app.command()
-def status():
+def status(
+    instance: str = typer.Option(None, "--instance", "-i", help="Named instance (isolated data dir)"),
+    data_dir: str = typer.Option(None, "--data-dir", "-d", help="Custom data directory"),
+):
     """Show Lumen's current configuration and health."""
-    config = _load_persisted_config()
+    lumen_dir = resolve_lumen_dir(instance=instance, data_dir=data_dir)
+    config_path = lumen_dir / "config.yaml"
+    config = _load_persisted_config(config_path)
     if not _is_runtime_configured(config):
         console.print("[red]Lumen is not installed.[/red]")
         console.print("Run [bold]lumen run[/bold] to start the setup wizard.")
@@ -279,7 +399,8 @@ def status():
             f"Language:  {config.get('language', 'en')}\n"
             f"Port:      {config.get('port', 3000)}\n"
             f"MCP:       {len(mcp.get('servers', {}))} servers\n"
-            f"Config:    {CONFIG_PATH}",
+            f"Instance:  {instance or 'default'}\n"
+            f"Config:    {config_path}",
             title="Lumen — Status",
             expand=False,
             border_style=BRAND,
@@ -545,7 +666,7 @@ def reload(
         console.print(f"[red]Reload failed: {e}[/red]")
         raise typer.Exit(1)
 
-    cap_count = len(brain.registry.list_all()) if brain.registry else 0
+    cap_count = len(brain.registry.all()) if brain.registry else 0
     console.print(f"[green]✓[/green] Runtime reloaded — {cap_count} capabilities active")
 
 

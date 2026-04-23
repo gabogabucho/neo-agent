@@ -60,7 +60,7 @@ pip install -e .[dev]
 lumen run
 ```
 
-## `lumen run` vs `lumen serve`
+## `lumen run` vs `lumen server`
 
 Lumen has two startup modes depending on where it runs.
 
@@ -82,7 +82,7 @@ Behavior:
 lumen run
 ```
 
-### `lumen serve`
+### `lumen server`
 
 Use this for:
 
@@ -100,13 +100,13 @@ Behavior:
 - future access to the dashboard requires login
 
 ```bash
-lumen serve --host 0.0.0.0 --port 3000
+lumen server --host 0.0.0.0 --port 3000
 ```
 
 Rule of thumb:
 
 - `lumen run` = I am running Lumen for myself on this machine
-- `lumen serve` = I am hosting Lumen so it can be accessed like a real installed web app
+- `lumen server` = I am hosting Lumen so it can be accessed like a real installed web app
 
 ### Run the test suite
 
@@ -143,10 +143,10 @@ lumen run
 
 Opens at `http://localhost:3000`. No auth required. Ideal for development and personal use.
 
-### VPS (`lumen serve`)
+### VPS (`lumen server`)
 
 ```bash
-lumen serve --host 0.0.0.0 --port 3000
+lumen server --host 0.0.0.0 --port 3000
 ```
 
 Shows a one-time setup token in the console. Access `http://your-ip:3000/setup`, enter the token, choose an owner PIN. After setup, the token is deleted and all access requires the PIN.
@@ -185,7 +185,7 @@ sudo certbot --nginx -d yourdomain.com
 
 ```bash
 lumen run [--port 3000] [--instance <name>] [--data-dir <path>]  # Start dashboard locally
-lumen serve [--host 0.0.0.0] [--port 3000] [--instance <name>]   # Start in server mode
+lumen server [--host 0.0.0.0] [--port 3000] [--instance <name>]   # Start in server mode
 lumen status                                                       # Show configuration and health
 lumen reload [--instance <name>]                                   # Reload runtime without restart
 lumen doctor                                                       # Diagnose and fix issues

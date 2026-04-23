@@ -94,9 +94,16 @@ _oauth_state_store: dict[str, dict] = {}
 _oauth_state_lock = threading.Lock()
 
 
-def configure(brain, locale: dict, config: dict, awareness=None):
-    """Configure the web channel (called by CLI when config exists)."""
-    global _brain, _locale, _config, _awareness
+def configure(brain, locale: dict, config: dict, awareness=None, *, lumen_dir: Path | None = None):
+    """Configure the web channel (called by CLI when config exists).
+    
+    Args:
+        lumen_dir: Instance-aware data directory. If None, uses default ~/.lumen/
+    """
+    global _brain, _locale, _config, _awareness, LUMEN_DIR, CONFIG_PATH
+    if lumen_dir is not None:
+        LUMEN_DIR = lumen_dir
+        CONFIG_PATH = lumen_dir / "config.yaml"
     _brain = brain
     _locale = locale
     _config = config
