@@ -4,6 +4,8 @@ import os
 import tempfile
 import time
 import unittest
+
+from lumen import __version__
 from pathlib import Path
 from unittest.mock import patch
 
@@ -185,7 +187,7 @@ class WebSurfaceTests(unittest.TestCase):
             response.json(),
             {
                 "status": "not_configured",
-                "version": "0.1.0",
+                "version": __version__,
                 "model": "not configured",
                 "language": "en",
                 "personality_ui": {"tag": "agent-ui", "surfaces": []},

@@ -13,6 +13,7 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 
 from lumen import __version__
+from lumen.core.module_manifest import resolve_module_manifest_path
 from lumen.core.paths import resolve_lumen_dir
 from lumen.core.registry import CapabilityKind
 from lumen.core.runtime import bootstrap_runtime, refresh_runtime_registry, reload_runtime_personality_surface, sync_runtime_modules
@@ -723,12 +724,33 @@ def _is_local_path(ref: str) -> bool:
     return Path(ref).exists()
 
 
+def _detect_local_artifact_kind(path: str | Path) -> str | None:
+    """Detect whether a local path is a kit, module, or simple skill artifact."""
+    target = Path(path)
+    if not target.exists() or not target.is_dir():
+        return None
+    if (target / "kit.yaml").exists():
+        return "kit"
+    if resolve_module_manifest_path(target) is not None:
+        return "module"
+    if (target / "SKILL.md").exists():
+        return "skill"
+    return None
+
+
 module_app = typer.Typer(
     name="module",
     help="Install and manage modules.",
     no_args_is_help=True,
 )
 app.add_typer(module_app, name="module")
+
+kit_app = typer.Typer(
+    name="kit",
+    help="Install and manage full kit bundles.",
+    no_args_is_help=True,
+)
+app.add_typer(kit_app, name="kit")
 
 
 @module_app.command("install")
@@ -769,8 +791,13 @@ def module_install(
 
     # Try local path first
     if _is_local_path(ref):
-        console.print(f"[dim]Installing from local path: {ref}...[/dim]")
-        result = installer.install_from_local_path(Path(ref))
+        kind = _detect_local_artifact_kind(ref)
+        if kind == "kit":
+            console.print(f"[dim]Installing kit from local path: {ref}...[/dim]")
+            result = installer.install_kit_from_local_path(Path(ref))
+        else:
+            console.print(f"[dim]Installing from local path: {ref}...[/dim]")
+            result = installer.install_from_local_path(Path(ref))
     elif owner and repo:
         console.print(f"[dim]Installing from github.com/{owner}/{repo}...[/dim]")
         result = installer.install_from_github_ref(owner, repo)
@@ -785,6 +812,47 @@ def module_install(
     else:
         error = result.get("error", "Unknown error")
         console.print(f"[red]✗[/red] {error}")
+        raise typer.Exit(1)
+
+
+@kit_app.command("install")
+def kit_install(
+    ref: str = typer.Argument(help="Local path to a kit directory"),
+    instance: str = typer.Option(None, "--instance", "-i", help="Named instance"),
+    data_dir: str = typer.Option(None, "--data-dir", "-d", help="Custom data dir"),
+):
+    """Install a full kit bundle from a local path."""
+    lumen_dir = resolve_lumen_dir(instance=instance, data_dir=data_dir)
+    config_path = lumen_dir / "config.yaml"
+    config = _load_persisted_config(config_path)
+
+    if not _is_runtime_configured(config):
+        console.print("[red]Lumen is not configured.[/red]")
+        console.print("Run [bold]lumen run[/bold] to start the setup wizard.")
+        raise typer.Exit(1)
+
+    from lumen.core.installer import Installer
+    from lumen.core.connectors import ConnectorRegistry
+
+    installer = Installer(
+        PKG_DIR,
+        ConnectorRegistry(),
+        memory=None,
+        lumen_dir=lumen_dir,
+        config=config,
+    )
+
+    result = installer.install_kit_from_local_path(Path(ref))
+    if result.get("status") == "installed":
+        console.print(f"[green]✓[/green] Installed kit {result.get('name', ref)}")
+        if result.get("active_personality"):
+            console.print(f"[dim]Active personality: {result['active_personality']}[/dim]")
+        if result.get("installed_modules"):
+            console.print(f"[dim]Bundled modules: {', '.join(result['installed_modules'])}[/dim]")
+        if result.get("missing_env"):
+            console.print(f"[yellow]Missing env:[/yellow] {', '.join(result['missing_env'])}")
+    else:
+        console.print(f"[red]✗[/red] {result.get('error', 'Unknown error')}")
         raise typer.Exit(1)
 
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import subprocess
 import shutil
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -290,6 +291,114 @@ class Installer:
 
         return result
 
+    def install_kit_from_local_path(self, source_path: Path) -> dict:
+        """Install a kit artifact from a local directory.
+
+        A kit is a bundle containing:
+          - kit.yaml
+          - personality.yaml
+          - modules/
+          - optional skills/
+          - optional flows/
+        """
+        source = Path(source_path).resolve()
+        kit_manifest_path = source / "kit.yaml"
+        if not source.exists() or not source.is_dir() or not kit_manifest_path.exists():
+            return {"status": "error", "error": f"No kit.yaml found in {source}"}
+
+        kit = yaml.safe_load(kit_manifest_path.read_text(encoding="utf-8")) or {}
+        if not isinstance(kit, dict):
+            return {"status": "error", "error": "Invalid kit.yaml"}
+
+        kit_name = str(kit.get("name") or source.name)
+        personality_rel = str(kit.get("personality") or "personality.yaml")
+        personality_src = source / personality_rel
+        if not personality_src.exists():
+            return {"status": "error", "error": f"Kit personality not found: {personality_rel}"}
+
+        installed_modules: list[str] = []
+        missing_env: list[str] = []
+
+        # 1) install bundled modules first (their requirements merge into config)
+        modules_dir = source / "modules"
+        if modules_dir.exists() and modules_dir.is_dir():
+            for module_dir in sorted(p for p in modules_dir.iterdir() if p.is_dir()):
+                mod_result = self.install_from_local_path(module_dir)
+                if mod_result.get("status") not in {"installed", "already_installed"}:
+                    return {
+                        "status": "error",
+                        "error": f"Failed installing bundled module {module_dir.name}: {mod_result.get('error', mod_result.get('status'))}",
+                    }
+                installed_modules.append(mod_result.get("name", module_dir.name))
+                for var in mod_result.get("missing_env", []) or []:
+                    if var not in missing_env:
+                        missing_env.append(var)
+
+        # 2) install the kit itself as a personality-capable module wrapper
+        kit_module_dir = self.installed_dir / kit_name
+        if not kit_module_dir.exists():
+            kit_module_dir.mkdir(parents=True, exist_ok=True)
+
+        # Copy top-level kit assets
+        shutil.copy2(kit_manifest_path, kit_module_dir / "kit.yaml")
+        shutil.copy2(personality_src, kit_module_dir / "personality.yaml")
+
+        skills_declared = kit.get("skills", []) if isinstance(kit.get("skills"), list) else []
+        flows_declared = kit.get("flows", []) if isinstance(kit.get("flows"), list) else []
+
+        for rel in skills_declared:
+            src = source / rel
+            if src.exists() and src.is_file():
+                dest = kit_module_dir / rel
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dest)
+
+        for rel in flows_declared:
+            src = source / rel
+            if src.exists() and src.is_file():
+                dest = kit_module_dir / rel
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dest)
+
+        synthetic_manifest = {
+            "name": kit_name,
+            "display_name": kit.get("display_name", kit_name),
+            "description": kit.get("description", ""),
+            "version": kit.get("version", "1.0.0"),
+            "tags": ["x-lumen", "kit", "personality"],
+            "personality": "personality.yaml",
+            "skills": skills_declared,
+            "onboarding_flow": "flows" if flows_declared else None,
+            "provides": kit.get("provides", []),
+        }
+        (kit_module_dir / "module.yaml").write_text(
+            yaml.dump({k: v for k, v in synthetic_manifest.items() if v is not None}, default_flow_style=False),
+            encoding="utf-8",
+        )
+
+        # optional default root skill for the kit wrapper
+        if not (kit_module_dir / "SKILL.md").exists():
+            (kit_module_dir / "SKILL.md").write_text(
+                f"---\nname: {kit_name}\ndescription: {kit.get('description', kit_name)}\n---\n# {kit.get('display_name', kit_name)}\n",
+                encoding="utf-8",
+            )
+
+        # Activate kit personality
+        self.config["active_personality"] = kit_name
+        self._persist_config()
+
+        result = {
+            "status": "installed",
+            "name": kit_name,
+            "display_name": kit.get("display_name", kit_name),
+            "description": kit.get("description", ""),
+            "active_personality": kit_name,
+            "installed_modules": installed_modules,
+        }
+        if missing_env:
+            result["missing_env"] = missing_env
+        return result
+
     def install_marketplace_item(self, item: dict) -> dict:
         """Install a marketplace card from a remote source."""
         if not isinstance(item, dict) or not item.get("name"):
@@ -315,9 +424,22 @@ class Installer:
         }
 
     def install_from_zip(self, zip_data: bytes) -> dict:
-        """Install a module from a ZIP file (WordPress-style upload)."""
+        """Install a module or kit from a ZIP file (WordPress-style upload)."""
         try:
             with zipfile.ZipFile(io.BytesIO(zip_data)) as zf:
+                # Kit support: detect kit.yaml first and install as a kit bundle
+                kit_entry = next((name for name in zf.namelist() if Path(name).name == "kit.yaml"), None)
+                if kit_entry:
+                    with tempfile.TemporaryDirectory() as tmp:
+                        extract_root = Path(tmp) / "kit"
+                        extract_root.mkdir(parents=True, exist_ok=True)
+                        zf.extractall(extract_root)
+                        kit_root = extract_root / Path(kit_entry).parts[0]
+                        if not (kit_root / "kit.yaml").exists():
+                            # flat zip without top-level folder
+                            kit_root = extract_root
+                        return self.install_kit_from_local_path(kit_root)
+
                 # Find the manifest to get the module name
                 manifest_path = find_module_manifest_in_zip(zf.namelist())
 
