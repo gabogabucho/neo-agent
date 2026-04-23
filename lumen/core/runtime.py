@@ -143,6 +143,10 @@ async def bootstrap_runtime(
     """Build a full Lumen runtime from config data."""
     active_channels = active_channels or ["web"]
 
+    # Secrets store must point at the instance before migration/hydration.
+    from lumen.core.secrets_store import configure_paths as _configure_secret_paths
+    _configure_secret_paths(lumen_dir=lumen_dir)
+
     # Migrate secrets from config.yaml to secrets.yaml (one-time)
     config, _migrated = _migrate_secrets(config)
 
