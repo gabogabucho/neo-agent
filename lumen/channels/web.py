@@ -39,6 +39,7 @@ from lumen.core.registry import CapabilityKind
 from lumen.core.runtime import (
     bootstrap_runtime,
     refresh_runtime_registry,
+    rehydrate_runtime_config,
     reload_runtime_personality_surface,
     sync_runtime_modules,
 )
@@ -2003,6 +2004,8 @@ async def api_reload(request: Request):
 
     Auth: Bearer token required (LUMEN_API_KEY env or config.api.rest_key).
     """
+    global _config
+
     auth_error = _validate_bearer_token(request)
     if auth_error:
         return JSONResponse(status_code=401, content={"error": auth_error})
@@ -2011,6 +2014,7 @@ async def api_reload(request: Request):
         return JSONResponse(status_code=503, content={"error": "Lumen not ready"})
 
     try:
+        _config = rehydrate_runtime_config(_config, lumen_dir=LUMEN_DIR)
         await sync_runtime_modules(
             _brain, config=_config, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR
         )

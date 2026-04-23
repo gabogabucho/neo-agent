@@ -35,6 +35,36 @@ class RuntimeBootstrap:
     integration_summary: dict | None = None
 
 
+def rehydrate_runtime_config(config: dict | None, *, lumen_dir: Path) -> dict:
+    """Reload config.yaml and secrets.yaml from disk for a live runtime refresh."""
+    from lumen.core.secrets_store import configure_paths as _configure_secret_paths
+    from lumen.core.secrets_store import load_all as _load_all_secrets
+
+    _configure_secret_paths(lumen_dir=lumen_dir)
+
+    loaded = dict(config or {})
+    config_path = lumen_dir / "config.yaml"
+    if config_path.exists():
+        try:
+            disk = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            if isinstance(disk, dict):
+                loaded = disk
+        except Exception:
+            pass
+
+    all_secrets = _load_all_secrets()
+    if all_secrets:
+        existing = loaded.get("secrets") or {}
+        if not isinstance(existing, dict):
+            existing = {}
+        for mod_name, bucket in all_secrets.items():
+            if isinstance(bucket, dict):
+                existing.setdefault(mod_name, {}).update(bucket)
+        loaded["secrets"] = existing
+
+    return loaded
+
+
 def refresh_runtime_registry(
     brain: Brain,
     *,

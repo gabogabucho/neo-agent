@@ -15,7 +15,7 @@ from rich.prompt import Prompt
 from lumen import __version__
 from lumen.core.paths import resolve_lumen_dir
 from lumen.core.registry import CapabilityKind
-from lumen.core.runtime import bootstrap_runtime, refresh_runtime_registry, reload_runtime_personality_surface, sync_runtime_modules
+from lumen.core.runtime import bootstrap_runtime, refresh_runtime_registry, rehydrate_runtime_config, reload_runtime_personality_surface, sync_runtime_modules
 
 BRAND = "#3d3d6d"
 BRAND_DIM = "#6b6baa"
@@ -655,6 +655,8 @@ def reload(
         raise typer.Exit(1)
 
     brain = runtime.brain
+    config = rehydrate_runtime_config(runtime.config, lumen_dir=lumen_dir)
+    runtime.config = config
 
     try:
         asyncio.run(

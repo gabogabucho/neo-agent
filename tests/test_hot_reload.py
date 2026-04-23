@@ -265,6 +265,99 @@ class ReloadCLICommandTests(unittest.TestCase):
         # bootstrap_runtime should have been called
         mock_bootstrap.assert_called_once()
 
+    @patch("lumen.cli.main.reload_runtime_personality_surface")
+    @patch("lumen.cli.main.sync_runtime_modules")
+    @patch("lumen.cli.main.refresh_runtime_registry")
+    @patch("lumen.cli.main.bootstrap_runtime")
+    @patch("lumen.cli.main._load_persisted_config")
+    @patch("lumen.cli.main._is_runtime_configured")
+    def test_reload_uses_runtime_config_after_bootstrap(
+        self,
+        mock_is_configured,
+        mock_load_config,
+        mock_bootstrap,
+        mock_refresh,
+        mock_sync,
+        mock_reload_surface,
+    ):
+        """reload must use hydrated runtime.config, not stale pre-bootstrap config."""
+        mock_is_configured.return_value = True
+        mock_load_config.return_value = {"model": "test"}
+
+        mock_runtime = MagicMock()
+        mock_runtime.brain = MagicMock()
+        mock_runtime.brain.registry = Registry()
+        mock_runtime.brain.connectors = ConnectorRegistry()
+        mock_runtime.brain.module_manager = MagicMock()
+        mock_runtime.brain.mcp_manager = MagicMock()
+        mock_runtime.brain.mcp_manager.discovery_payload.return_value = None
+        mock_runtime.brain.capability_awareness = None
+        mock_runtime.brain.marketplace = None
+        mock_runtime.config = {"model": "test", "secrets": {"demo": {"public": {"X": "1"}}}}
+        mock_runtime.locale = {}
+        mock_runtime.awareness = None
+        mock_bootstrap.return_value = mock_runtime
+
+        from typer.testing import CliRunner
+        from lumen.cli.main import app
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["reload"])
+
+        assert result.exit_code == 0
+        assert mock_sync.call_args.kwargs["config"] == mock_runtime.config
+        assert mock_reload_surface.call_args.kwargs["config"] == mock_runtime.config
+
+
+class ReloadConfigHydrationTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.original_lumen_dir = web.LUMEN_DIR
+        self.original_config_path = web.CONFIG_PATH
+        self.original_brain = web._brain
+        self.original_config = web._config
+        self.original_locale = web._locale
+        web.LUMEN_DIR = Path(self.temp_dir.name)
+        web.CONFIG_PATH = web.LUMEN_DIR / "config.yaml"
+        web._brain = BrainStub()
+        web._config = {"model": "test"}
+        web._locale = {}
+        web.session_manager._sessions.clear()
+        self.client = TestClient(web.app)
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+        web.LUMEN_DIR = self.original_lumen_dir
+        web.CONFIG_PATH = self.original_config_path
+        web._brain = self.original_brain
+        web._config = self.original_config
+        web._locale = self.original_locale
+        web.session_manager._sessions.clear()
+        os.environ.pop("LUMEN_API_KEY", None)
+
+    @patch("lumen.channels.web.reload_runtime_personality_surface")
+    @patch("lumen.channels.web.refresh_runtime_registry")
+    @patch("lumen.channels.web.sync_runtime_modules", new_callable=AsyncMock)
+    def test_api_reload_rehydrates_config_from_disk(
+        self, mock_sync, mock_refresh, mock_reload_surface
+    ):
+        """POST /api/reload reloads config+secrets from disk before refresh."""
+        os.environ["LUMEN_API_KEY"] = "test-key"
+        web.CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        web.CONFIG_PATH.write_text('{"model": "test"}', encoding="utf-8")
+
+        # stale in-memory config
+        web._config = {"model": "test"}
+
+        response = self.client.post(
+            "/api/reload",
+            headers={"Authorization": "Bearer test-key"},
+        )
+
+        assert response.status_code == 200
+        assert mock_sync.call_args.kwargs["config"] == web._config
+        assert mock_reload_surface.call_args.kwargs["config"] == web._config
+
 
 if __name__ == "__main__":
     unittest.main()
