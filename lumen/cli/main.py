@@ -660,8 +660,8 @@ def reload(
         asyncio.run(
             sync_runtime_modules(brain, config=config, pkg_dir=PKG_DIR, lumen_dir=lumen_dir)
         )
-        refresh_runtime_registry(brain, pkg_dir=PKG_DIR, active_channels=["web"])
-        reload_runtime_personality_surface(brain, config=config, pkg_dir=PKG_DIR)
+        refresh_runtime_registry(brain, pkg_dir=PKG_DIR, lumen_dir=lumen_dir, active_channels=["web"])
+        reload_runtime_personality_surface(brain, config=config, pkg_dir=PKG_DIR, lumen_dir=lumen_dir)
     except Exception as e:
         console.print(f"[red]Reload failed: {e}[/red]")
         raise typer.Exit(1)

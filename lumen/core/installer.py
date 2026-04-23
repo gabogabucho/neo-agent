@@ -54,7 +54,7 @@ class Installer:
         self.memory = memory
         self.catalog = catalog or Catalog()
         self.lumen_dir = lumen_dir or (Path.home() / ".lumen")
-        self.installed_dir = pkg_dir / "modules"
+        self.installed_dir = (self.lumen_dir / "modules") if lumen_dir is not None else (pkg_dir / "modules")
         self.installed_dir.mkdir(parents=True, exist_ok=True)
         self.config = config if config is not None else {}
 
@@ -69,7 +69,7 @@ class Installer:
 
     def _detect_pending_setup(self, module_name: str) -> dict | None:
         """Inspect the installed module and return setup info if env vars are missing."""
-        module_dir = self.installed_dir / module_name
+        module_dir = self._resolve_module_dir(module_name)
         if not module_dir.exists():
             return None
         _, manifest = load_module_manifest(module_dir)
@@ -79,6 +79,13 @@ class Installer:
             self.config,
             module_dir=module_dir,
         )
+
+    def _resolve_module_dir(self, name: str) -> Path:
+        direct = self.installed_dir / name
+        if direct.exists():
+            return direct
+        legacy = self.pkg_dir / "modules" / name
+        return legacy
 
     def list_installed(self) -> list[dict]:
         """List all installed modules."""
@@ -113,7 +120,7 @@ class Installer:
 
     def is_installed(self, name: str) -> bool:
         """Check if a module is installed."""
-        module_dir = self.installed_dir / name
+        module_dir = self._resolve_module_dir(name)
         return (
             module_dir.exists() and resolve_module_manifest_path(module_dir) is not None
         )
@@ -389,7 +396,7 @@ class Installer:
 
     def uninstall(self, name: str) -> dict:
         """Uninstall a module. Lumen forgets."""
-        module_dir = self.installed_dir / name
+        module_dir = self._resolve_module_dir(name)
         if not module_dir.exists():
             return {"status": "not_installed", "name": name}
 
@@ -404,7 +411,8 @@ class Installer:
             lumen_dir=self.lumen_dir,
         )
 
-        shutil.rmtree(module_dir)
+        if module_dir.exists():
+            shutil.rmtree(module_dir)
 
         # Purge secrets — module is gone, secrets are useless
         try:

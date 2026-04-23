@@ -242,10 +242,12 @@ class ModuleRuntimeManager:
         self._loaded: dict[str, LoadedModuleRuntime] = {}
 
     async def sync(self) -> None:
-        modules_dir = self.pkg_dir / "modules"
+        module_roots = [self.runtime_root, self.pkg_dir / "modules"]
         installed_names: set[str] = set()
 
-        if modules_dir.exists():
+        for modules_dir in module_roots:
+            if not modules_dir.exists():
+                continue
             for module_dir in modules_dir.iterdir():
                 if not module_dir.is_dir() or module_dir.name.startswith("_"):
                     continue
@@ -253,6 +255,8 @@ class ModuleRuntimeManager:
                 if manifest_path is None:
                     continue
                 name = str(manifest.get("name") or module_dir.name)
+                if name in installed_names:
+                    continue
                 installed_names.add(name)
                 if name not in self._loaded:
                     await self._activate(name, module_dir)

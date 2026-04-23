@@ -156,7 +156,7 @@ async def _handle_flow_action(action: str, slots: dict, *, session=None) -> dict
 async def _persist_module_setup_slots(module_name: str, values: dict | None) -> dict:
     global _config
 
-    module_dir = PKG_DIR / "modules" / module_name
+    module_dir = _installed_module_dir(module_name)
     manifest_path, manifest = load_module_manifest(module_dir)
     if manifest_path is None:
         return {"status": "error", "message": f"El módulo {module_name} ya no está instalado."}
@@ -218,7 +218,7 @@ async def _persist_module_setup_slots(module_name: str, values: dict | None) -> 
 
         # Trigger on_configure lifecycle hook if module defines one
         from lumen.core.module_runtime import run_module_configure_hook
-        module_dir = PKG_DIR / "modules" / module_name
+        module_dir = _installed_module_dir(module_name)
         if module_dir.is_dir():
             run_module_configure_hook(
                 name=module_name,
@@ -236,8 +236,8 @@ async def _persist_module_setup_slots(module_name: str, values: dict | None) -> 
         if manager:
             await manager.unload(module_name)
         await sync_runtime_modules(_brain, config=_config, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR)
-        refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, active_channels=["web"])
-        reload_runtime_personality_surface(_brain, config=_config, pkg_dir=PKG_DIR)
+        refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR, active_channels=["web"])
+        reload_runtime_personality_surface(_brain, config=_config, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR)
         await broadcast_awareness()
 
     if after_pending is None:
@@ -341,8 +341,8 @@ async def _persist_mcp_setup_slots(server_id: str, values: dict | None) -> dict:
 
     if _brain is not None:
         await _restart_mcp_runtime()
-        refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, active_channels=["web"])
-        reload_runtime_personality_surface(_brain, config=_config, pkg_dir=PKG_DIR)
+        refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR, active_channels=["web"])
+        reload_runtime_personality_surface(_brain, config=_config, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR)
         await broadcast_awareness()
 
     if after_pending is None:
@@ -701,10 +701,10 @@ async def _refresh_runtime_from_config(previous_config: dict | None = None) -> b
     if getattr(_brain, "mcp_manager", None) is not None:
         await _restart_mcp_runtime()
 
-    refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, active_channels=["web"])
+    refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR, active_channels=["web"])
 
     if str(_config.get("language") or "en") != previous_language:
-        reload_runtime_personality_surface(_brain, config=_config, pkg_dir=PKG_DIR)
+        reload_runtime_personality_surface(_brain, config=_config, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR)
 
     return True
 
@@ -719,8 +719,15 @@ def _required_personality_tags(entry_path: str | None) -> set[str] | None:
     return PERSONALITY_ENTRY_TAGS.get(str(entry_path or "").strip().lower())
 
 
+def _installed_module_dir(module_name: str) -> Path:
+    instance_dir = LUMEN_DIR / "modules" / str(module_name)
+    if instance_dir.exists():
+        return instance_dir
+    return PKG_DIR / "modules" / str(module_name)
+
+
 def _installed_personality_manifest(module_name: str) -> dict | None:
-    module_dir = PKG_DIR / "modules" / str(module_name)
+    module_dir = _installed_module_dir(module_name)
     manifest_path, manifest = load_module_manifest(module_dir)
     if manifest_path is None:
         return None
@@ -1109,13 +1116,13 @@ async def lifespan(app: FastAPI):
     if _brain and _awareness:
         from lumen.core.watchers import FilePoller
 
-        modules_dir = PKG_DIR / "modules"
+        modules_dir = LUMEN_DIR / "modules"
         skills_dir = PKG_DIR / "skills"
         watched = [d for d in [modules_dir, skills_dir] if d.exists()]
 
         async def _on_file_change():
             """Called by FilePoller when filesystem changes detected."""
-            refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, active_channels=["web"])
+            refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR, active_channels=["web"])
             await broadcast_awareness()
 
         if watched:
@@ -2007,8 +2014,8 @@ async def api_reload(request: Request):
         await sync_runtime_modules(
             _brain, config=_config, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR
         )
-        refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, active_channels=["web"])
-        reload_runtime_personality_surface(_brain, config=_config, pkg_dir=PKG_DIR)
+        refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR, active_channels=["web"])
+        reload_runtime_personality_surface(_brain, config=_config, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR)
 
         # Count capabilities in the refreshed registry
         module_count = 0
@@ -2067,8 +2074,8 @@ async def api_modules_install(request: Request, name: str):
             if "personality" in tags:
                 _config = _merge_save_config({"active_personality": installed_name})
 
-        refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, active_channels=["web"])
-        reload_runtime_personality_surface(_brain, config=_config, pkg_dir=PKG_DIR)
+        refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR, active_channels=["web"])
+        reload_runtime_personality_surface(_brain, config=_config, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR)
 
         # Proactively announce the new capability to connected clients
         await broadcast_awareness()
@@ -2105,8 +2112,8 @@ async def api_modules_uninstall(request: Request, name: str):
     if result["status"] == "uninstalled":
         if was_active_personality:
             _config = _merge_save_config({}, removals={"active_personality"})
-        refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, active_channels=["web"])
-        reload_runtime_personality_surface(_brain, config=_config, pkg_dir=PKG_DIR)
+        refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR, active_channels=["web"])
+        reload_runtime_personality_surface(_brain, config=_config, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR)
 
         await broadcast_awareness()
 
@@ -2150,8 +2157,8 @@ async def api_modules_upload(request: Request):
                 if "personality" in tags:
                     _config = _merge_save_config({"active_personality": module_name})
 
-        refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, active_channels=["web"])
-        reload_runtime_personality_surface(_brain, config=_config, pkg_dir=PKG_DIR)
+        refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR, active_channels=["web"])
+        reload_runtime_personality_surface(_brain, config=_config, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR)
 
         await broadcast_awareness()
 
@@ -2174,7 +2181,7 @@ async def api_modules_complete_setup(request: Request, name: str):
     if not isinstance(values, dict):
         return JSONResponse(status_code=400, content={"error": "Expected a JSON object of setup values"})
 
-    module_dir = PKG_DIR / "modules" / name
+    module_dir = _installed_module_dir(name)
     manifest_path, _ = load_module_manifest(module_dir)
     if manifest_path is None:
         return JSONResponse(status_code=404, content={"error": "Module not installed"})

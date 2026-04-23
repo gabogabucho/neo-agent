@@ -173,6 +173,7 @@ class HotReloadTests(unittest.TestCase):
         mock_refresh.assert_called_once_with(
             self.brain_stub,
             pkg_dir=web.PKG_DIR,
+            lumen_dir=web.LUMEN_DIR,
             active_channels=["web"],
         )
 

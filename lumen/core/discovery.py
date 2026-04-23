@@ -47,6 +47,7 @@ def discover_all(
     mcp_config: dict | None = None,
     model: str | None = None,
     config: dict | None = None,
+    lumen_dir: Path | None = None,
 ) -> Registry:
     """Run full discovery and populate the registry."""
     # Built-in skills
@@ -54,19 +55,30 @@ def discover_all(
 
     # Skills inside installed modules (each module can have a SKILL.md
     # and/or declare additional skill files in module.yaml -> skills: [...])
-    modules_dir = pkg_dir / "modules"
-    if modules_dir.exists():
+    module_roots: list[Path] = []
+    if lumen_dir is not None:
+        module_roots.append(lumen_dir / "modules")
+    module_roots.append(pkg_dir / "modules")
+
+    seen_module_names: set[str] = set()
+    for modules_dir in module_roots:
+        if not modules_dir.exists():
+            continue
         for module_dir in modules_dir.iterdir():
-            if module_dir.is_dir() and not module_dir.name.startswith("_"):
-                skill_file = module_dir / "SKILL.md"
-                if skill_file.exists():
-                    _discover_skill_file(registry, skill_file, module_dir.name)
-                _discover_declared_module_skills(registry, module_dir)
+            if not module_dir.is_dir() or module_dir.name.startswith("_"):
+                continue
+            if module_dir.name in seen_module_names:
+                continue
+            seen_module_names.add(module_dir.name)
+            skill_file = module_dir / "SKILL.md"
+            if skill_file.exists():
+                _discover_skill_file(registry, skill_file, module_dir.name, module_name=module_dir.name)
+            _discover_declared_module_skills(registry, module_dir)
 
     _discover_connectors(registry, connectors)
-    _discover_modules(registry, pkg_dir / "modules", config=config)
+    _discover_modules_multi(registry, module_roots, config=config)
     _discover_channels(registry, active_channels or ["web"])
-    _discover_module_channels(registry, pkg_dir / "modules")
+    _discover_module_channels_multi(registry, module_roots)
 
     if mcp_config:
         _discover_mcps(registry, mcp_config, pkg_dir=pkg_dir)
@@ -79,7 +91,13 @@ def discover_all(
     return registry
 
 
-def _discover_skill_file(registry: Registry, skill_file: Path, fallback_name: str):
+def _discover_skill_file(
+    registry: Registry,
+    skill_file: Path,
+    fallback_name: str,
+    *,
+    module_name: str | None = None,
+):
     """Discover a single SKILL.md file."""
     try:
         frontmatter = _parse_frontmatter(skill_file)
@@ -102,6 +120,8 @@ def _discover_skill_file(registry: Registry, skill_file: Path, fallback_name: st
                 metadata={
                     "level": normalized.metadata.get("level", 1),
                     "path": str(skill_file),
+                    "module_name": module_name,
+                    "aliases": ([f"{module_name}/{name}"] if module_name else []),
                     "interoperability": normalized.metadata.get("interoperability"),
                 },
             )
@@ -174,7 +194,7 @@ def _discover_declared_module_skills(registry: Registry, module_dir: Path):
                 continue
             skill_file = module_dir / rel_path
             if skill_file.exists() and skill_file.is_file():
-                _discover_skill_file(registry, skill_file, skill_file.stem)
+                _discover_skill_file(registry, skill_file, skill_file.stem, module_name=module_dir.name)
     except Exception:
         pass
 
@@ -320,6 +340,90 @@ def _discover_modules(
             )
 
 
+def _discover_modules_multi(
+    registry: Registry,
+    module_roots: list[Path],
+    *,
+    config: dict | None = None,
+):
+    seen: set[str] = set()
+    for modules_dir in module_roots:
+        if not modules_dir.exists():
+            continue
+        for module_dir in modules_dir.iterdir():
+            if not module_dir.is_dir() or module_dir.name.startswith("_") or module_dir.name in seen:
+                continue
+            seen.add(module_dir.name)
+            try:
+                manifest_file, manifest = load_module_manifest(module_dir)
+                if manifest_file is None:
+                    continue
+                normalized = normalize_module_manifest(
+                    manifest,
+                    installed=True,
+                    manifest_path=str(manifest_file),
+                )
+                name = normalized.name or module_dir.name
+                pending_setup = pending_setup_for_manifest(
+                    name,
+                    manifest,
+                    config,
+                    module_dir=module_dir,
+                )
+                if pending_setup is None:
+                    manual_contract = contract_from_opaque_manifest(name, manifest)
+                    if manual_contract and manual_contract.is_manual_only():
+                        pending_setup = {
+                            "kind": "manual",
+                            "artifact_id": name,
+                            "display_name": manual_contract.display_name,
+                            "env_specs": [],
+                            "flow": None,
+                            "manual_instructions": manual_contract.manual_instructions,
+                        }
+                has_skill = (module_dir / "SKILL.md").exists()
+                if not has_skill:
+                    declared_skills = manifest.get("skills", [])
+                    if isinstance(declared_skills, list):
+                        has_skill = any(
+                            isinstance(rel, str) and (module_dir / rel).exists()
+                            for rel in declared_skills
+                        )
+                status = CapabilityStatus.READY if has_skill and not pending_setup else CapabilityStatus.AVAILABLE
+                registry.register(
+                    Capability(
+                        kind=CapabilityKind.MODULE,
+                        name=name,
+                        description=normalized.description,
+                        status=status,
+                        provides=normalized.provides,
+                        requires=normalized.requires,
+                        metadata={
+                            "display_name": manifest.get("display_name", name),
+                            "version": manifest.get("version", "0.0.0"),
+                            "author": manifest.get("author", ""),
+                            "path": str(module_dir),
+                            "tags": normalized.metadata.get("tags", []),
+                            "min_capability": manifest.get("min_capability", "tier-1"),
+                            "manifest_path": str(manifest_file),
+                            "interoperability": normalized.metadata.get("interoperability"),
+                            "schema_aliases": normalized.metadata.get("schema_aliases", {}),
+                            "x_lumen": normalized.metadata.get("x_lumen", {}),
+                            "pending_setup": pending_setup,
+                        },
+                    )
+                )
+            except Exception:
+                registry.register(
+                    Capability(
+                        kind=CapabilityKind.MODULE,
+                        name=module_dir.name,
+                        description="Failed to parse manifest",
+                        status=CapabilityStatus.ERROR,
+                    )
+                )
+
+
 def _discover_channels(registry: Registry, active_channels: list[str]):
     """Register active channels."""
     channel_descriptions = {
@@ -373,6 +477,10 @@ def _discover_module_channels(registry: Registry, modules_dir: Path):
             if not declared_channel or not isinstance(channel_meta, dict):
                 continue
 
+            channel_name = str(manifest.get("name") or module_dir.name)
+            if registry.get(CapabilityKind.CHANNEL, channel_name):
+                continue
+
             has_runtime_skill = (module_dir / "SKILL.md").exists()
             declared_skills = manifest.get("skills", [])
             if not has_runtime_skill and isinstance(declared_skills, list):
@@ -384,7 +492,7 @@ def _discover_module_channels(registry: Registry, modules_dir: Path):
             registry.register(
                 Capability(
                     kind=CapabilityKind.CHANNEL,
-                    name=str(manifest.get("name") or module_dir.name),
+                    name=channel_name,
                     description=str(manifest.get("description") or f"External channel from {module_dir.name}"),
                     status=(CapabilityStatus.READY if has_runtime_skill else CapabilityStatus.AVAILABLE),
                     provides=[str(p) for p in provides if isinstance(p, str) and p.startswith("channel.")],
@@ -400,6 +508,18 @@ def _discover_module_channels(registry: Registry, modules_dir: Path):
             )
         except Exception:
             pass
+
+
+def _discover_module_channels_multi(registry: Registry, module_roots: list[Path]):
+    seen: set[str] = set()
+    for modules_dir in module_roots:
+        if not modules_dir.exists():
+            continue
+        for module_dir in modules_dir.iterdir():
+            if not module_dir.is_dir() or module_dir.name.startswith("_") or module_dir.name in seen:
+                continue
+            seen.add(module_dir.name)
+        _discover_module_channels(registry, modules_dir)
 
 
 def _discover_mcps(registry: Registry, mcp_config: dict, *, pkg_dir: Path | None = None):

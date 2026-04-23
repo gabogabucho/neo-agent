@@ -39,6 +39,7 @@ def refresh_runtime_registry(
     brain: Brain,
     *,
     pkg_dir: Path,
+    lumen_dir: Path | None = None,
     active_channels: list[str] | None = None,
 ) -> Registry:
     """Refresh runtime discovery using the live runtime inputs.
@@ -60,6 +61,7 @@ def refresh_runtime_registry(
         config=getattr(brain, "module_manager", None).config
         if getattr(brain, "module_manager", None)
         else None,
+        lumen_dir=lumen_dir,
         mcp_config=(
             brain.mcp_manager.discovery_payload()
             if getattr(brain, "mcp_manager", None)
@@ -109,11 +111,12 @@ def reload_runtime_personality_surface(
     *,
     config: dict,
     pkg_dir: Path,
+    lumen_dir: Path | None = None,
 ) -> None:
     """Reload only the personality + flows surface for the live runtime."""
     lang = config.get("language", "en")
     locale_personality_path = pkg_dir / "locales" / lang / "personality.yaml"
-    active_personality_module = _resolve_active_personality_module(config, pkg_dir)
+    active_personality_module = _resolve_active_personality_module(config, pkg_dir, lumen_dir)
     personality_path = _resolve_personality_path(
         active_personality_module, locale_personality_path
     )
@@ -127,7 +130,7 @@ def reload_runtime_personality_surface(
     onboarding_flow_path = _resolve_module_onboarding_flow(active_personality_module)
     if onboarding_flow_path is not None:
         brain.load_flows(onboarding_flow_path)
-    _load_pending_artifact_setup_flows(brain, pkg_dir=pkg_dir, config=config)
+    _load_pending_artifact_setup_flows(brain, pkg_dir=pkg_dir, config=config, lumen_dir=lumen_dir)
 
 
 async def bootstrap_runtime(
@@ -187,6 +190,7 @@ async def bootstrap_runtime(
         active_channels=active_channels,
         model=config.get("model"),
         config=config,
+        lumen_dir=lumen_dir,
         mcp_config=mcp_manager.discovery_payload(),
     )
 
@@ -213,6 +217,7 @@ async def bootstrap_runtime(
         capability_awareness=awareness,
         language=config.get("language", "en"),
         api_key_env=config.get("api_key_env"),
+        config=config,
     )
 
     from lumen.core.inbox import Inbox
@@ -234,7 +239,7 @@ async def bootstrap_runtime(
     onboarding_flow_path = _resolve_module_onboarding_flow(active_personality_module)
     if onboarding_flow_path is not None:
         brain.load_flows(onboarding_flow_path)
-    _load_pending_artifact_setup_flows(brain, pkg_dir=pkg_dir, config=config)
+    _load_pending_artifact_setup_flows(brain, pkg_dir=pkg_dir, config=config, lumen_dir=lumen_dir)
 
     ui_path = pkg_dir / "locales" / lang / "ui.yaml"
     locale = {}
@@ -291,9 +296,23 @@ def _resolve_active_personality_module(
     if not module_name:
         return None
 
-    module_dir = pkg_dir / "modules" / str(module_name)
-    manifest_path, manifest = load_module_manifest(module_dir)
-    if manifest_path is None:
+    module_roots = []
+    if lumen_dir is not None:
+        module_roots.append(lumen_dir / "modules")
+    module_roots.append(pkg_dir / "modules")
+
+    module_dir = None
+    manifest = None
+    manifest_path = None
+    for root in module_roots:
+        candidate = root / str(module_name)
+        candidate_manifest_path, candidate_manifest = load_module_manifest(candidate)
+        if candidate_manifest_path is not None:
+            module_dir = candidate
+            manifest = candidate_manifest
+            manifest_path = candidate_manifest_path
+            break
+    if manifest_path is None or module_dir is None or manifest is None:
         return None
 
     tags = manifest.get("tags") or []
@@ -343,5 +362,6 @@ def _load_pending_artifact_setup_flows(
     *,
     pkg_dir: Path,
     config: dict,
+    lumen_dir: Path | None = None,
 ) -> None:
-    brain.flows.extend(collect_pending_artifact_setup_flows(pkg_dir, config))
+    brain.flows.extend(collect_pending_artifact_setup_flows(pkg_dir, config, lumen_dir=lumen_dir))

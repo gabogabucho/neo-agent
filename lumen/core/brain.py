@@ -53,6 +53,7 @@ class Brain:
         language: str = "en",
         api_key_env: str | None = None,
         flow_action_handler=None,
+        config: dict | None = None,
     ):
         self.consciousness = consciousness
         self.personality = personality
@@ -68,6 +69,7 @@ class Brain:
         self.language = (language or "en").lower()
         self.api_key_env = api_key_env
         self.flow_action_handler = flow_action_handler
+        self.config = config or {}
         self._last_detected_language: str = self.language
 
     def _resolved_model(self) -> str:
@@ -604,6 +606,12 @@ class Brain:
 
         cap = self.registry.get(CapabilityKind.SKILL, skill_name)
         if not cap:
+            for candidate in self.registry.list_by_kind(CapabilityKind.SKILL):
+                aliases = (candidate.metadata or {}).get("aliases", [])
+                if skill_name in aliases:
+                    cap = candidate
+                    break
+        if not cap:
             return {"error": f"Skill '{skill_name}' not found"}
 
         skill_path = cap.metadata.get("path")
@@ -612,9 +620,35 @@ class Brain:
 
         try:
             content = Path(skill_path).read_text(encoding="utf-8")
+            content = self._interpolate_skill_content(content, cap)
             return {"skill": skill_name, "content": content}
         except Exception as e:
             return {"error": f"Cannot read skill '{skill_name}': {e}"}
+
+    def _interpolate_skill_content(self, content: str, cap) -> str:
+        """Replace {KEY} placeholders with module config/secrets when available."""
+        metadata = getattr(cap, "metadata", {}) or {}
+        module_name = metadata.get("module_name")
+
+        values: dict[str, str] = {}
+        cfg = self.config or {}
+        if isinstance(cfg, dict):
+            for key, value in cfg.items():
+                if isinstance(value, (str, int, float, bool)):
+                    values[str(key)] = str(value)
+
+            if module_name:
+                secrets = (cfg.get("secrets") or {}).get(module_name) or {}
+                if isinstance(secrets, dict):
+                    for key, value in secrets.items():
+                        if isinstance(value, (str, int, float, bool)):
+                            values[str(key)] = str(value)
+
+        def replace(match):
+            key = match.group(1)
+            return values.get(key, match.group(0))
+
+        return re.sub(r"\{([A-Z0-9_]+)\}", replace, content)
 
     def _search_modules(self, arguments: str) -> dict:
         """Search the module catalog for modules that fill a capability gap."""

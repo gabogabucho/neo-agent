@@ -356,21 +356,31 @@ def pending_setup_from_contract(contract: ArtifactSetupContract | None) -> dict[
 def collect_pending_artifact_setup_flows(
     pkg_dir: Path,
     config: dict | None = None,
+    lumen_dir: Path | None = None,
 ) -> list[dict[str, Any]]:
     """Collect pending native + MCP setup flows from the unified contract layer."""
 
     config = config or {}
     flows: list[dict[str, Any]] = []
 
-    modules_dir = pkg_dir / "modules"
-    if modules_dir.exists():
-        from lumen.core.module_manifest import load_module_manifest
+    module_roots = []
+    if lumen_dir is not None:
+        module_roots.append(lumen_dir / "modules")
+    module_roots.append(pkg_dir / "modules")
+    seen: set[str] = set()
+    from lumen.core.module_manifest import load_module_manifest
 
+    for modules_dir in module_roots:
+        if not modules_dir.exists():
+            continue
         for module_dir in sorted(modules_dir.iterdir(), key=lambda item: item.name):
             if not module_dir.is_dir() or module_dir.name.startswith("_"):
                 continue
             _, manifest = load_module_manifest(module_dir)
             module_name = str((manifest or {}).get("name") or module_dir.name)
+            if module_name in seen:
+                continue
+            seen.add(module_name)
             contract = contract_from_native_manifest(module_name, manifest, config)
             flow = build_flow_from_contract(contract) if contract else None
             if flow:
