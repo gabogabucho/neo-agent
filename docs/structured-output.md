@@ -55,13 +55,18 @@ structured_output:
   tag: agent-ui
   version: v1
   hint: "When presenting options, data comparisons, or form-like inputs, wrap structured data in <agent-ui> tags."
+
+# Optional runtime UI metadata exposed to the frontend
+ui:
+  tag: agent-ui
+  surfaces: [chat_right_rail, briefing]
 ```
 
 ## Frontend Parsing
 
 ```javascript
-function parseAgentUI(text) {
-  const regex = /<agent-ui>(.*?)<\/agent-ui>/gs;
+function parseAgentUI(text, tag = 'agent-ui') {
+  const regex = new RegExp(`<${tag}>(.*?)<\/${tag}>`, 'gs');
   const matches = [];
   let match;
   while ((match = regex.exec(text)) !== null) {
@@ -80,5 +85,8 @@ function parseAgentUI(text) {
 - **Lumen never parses these tags** — they flow through as plain text
 - The personality decides when to emit structured blocks
 - The frontend decides how to render them
+- In Lumen 0.4.0+, the active personality can expose `personality_ui.tag`
+  and `personality_ui.surfaces` through the runtime so the frontend does not
+  need to hardcode `<agent-ui>` forever
 - Invalid JSON inside tags is the frontend's responsibility to handle
 - This is a convention, not a core feature — it works with any personality
