@@ -179,6 +179,79 @@ sudo certbot --nginx -d yourdomain.com
 
 **Without HTTPS** (testing only): Direct IP access works. The setup token and owner PIN protect access, but credentials travel in plaintext. Use only for personal testing.
 
+## CLI Reference
+
+### Core commands
+
+```bash
+lumen run [--port 3000] [--instance <name>] [--data-dir <path>]  # Start dashboard locally
+lumen serve [--host 0.0.0.0] [--port 3000] [--instance <name>]   # Start in server mode
+lumen status                                                       # Show configuration and health
+lumen reload [--instance <name>]                                   # Reload runtime without restart
+lumen doctor                                                       # Diagnose and fix issues
+```
+
+### Module management
+
+```bash
+lumen module install github:owner/repo        # Install from GitHub
+lumen module install https://github.com/owner/repo  # Install from URL
+lumen module install <catalog-name>            # Install from built-in catalog
+```
+
+### Configuration
+
+```bash
+lumen config set <module>.<key> <value> [--instance <name>]   # Set a module config value
+lumen config get <module>.<key> [--instance <name>]           # Get a module config value
+lumen config delete <module>.<key> [--instance <name>]        # Delete a config value
+lumen config list <module> [--instance <name>]                # List all config keys (redacted)
+```
+
+### API keys
+
+```bash
+lumen api-key generate --label "my app" [--instance <name>]  # Generate a new API key (shown once!)
+lumen api-key list [--instance <name>]                        # List keys (prefix + label only)
+lumen api-key revoke <prefix> [--instance <name>]             # Revoke a key by prefix
+```
+
+### Instance isolation
+
+Run multiple independent Lumen instances on the same machine:
+
+```bash
+lumen run --instance work          # Data stored in ~/.lumen/instances/work/
+lumen run --instance personal      # Data stored in ~/.lumen/instances/personal/
+lumen run --data-dir /tmp/test     # Custom data directory
+```
+
+Each instance has its own `config.yaml`, `memory.db`, `api_keys.yaml`, and module secrets.
+
+### REST API
+
+Lumen exposes a REST API for external application integration:
+
+```bash
+# Health check (no auth required)
+curl http://localhost:3000/health
+# → {"ok": true, "version": "0.3.0", "modules_ready": 5}
+
+# Chat (Bearer auth required)
+curl -X POST http://localhost:3000/api/chat \
+  -H "Authorization: Bearer your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "hello", "session_id": "optional-session-id"}'
+# → {"response": "...", "session_id": "..."}
+
+# Reload runtime (Bearer auth required)
+curl -X POST http://localhost:3000/api/reload \
+  -H "Authorization: Bearer your-api-key"
+# → {"status": "reloaded", "modules": 5}
+```
+
+Auth sources (checked in order): `LUMEN_API_KEY` env var → `config.api.rest_key` → `api_keys.yaml` hashed keys.
+
 ## Architecture
 
 Lumen has five layers with clear boundaries:
@@ -235,6 +308,15 @@ Built-in handlers for `task`, `note`, and `memory`. Anything else plugs in via M
 
 - **Three-path onboarding** &mdash; quick start, personality picker, or bring-your-own module
 - **Consumer UI** &mdash; clean chat-first dashboard, collapsable sidebar, no dev panel
+- **REST API** &mdash; `POST /api/chat` for external app integration with Bearer auth
+- **Health check** &mdash; `GET /health` public endpoint for monitoring (`{ok, version, modules_ready}`)
+- **Hot reload** &mdash; `POST /api/reload` and `lumen reload` refresh runtime without restart
+- **Terminal connector** &mdash; secure command execution with allowlist/denylist, timeout, and output truncation
+- **API key management** &mdash; `lumen api-key generate/revoke/list` with SHA-256 hashed keys per instance
+- **Remote module install** &mdash; `lumen module install github:owner/repo` or URL, auto-detects `module.yaml`/`SKILL.md`
+- **Instance isolation** &mdash; `--instance` and `--data-dir` flags for running multiple independent Lumen instances
+- **Config CLI** &mdash; `lumen config set/get/delete/list` for module secrets per instance
+- **Lifecycle hooks** &mdash; `on_install`, `on_uninstall`, `on_configure` hooks for module lifecycle events
 - **Catalog taxonomy** &mdash; kits reshape Lumen, modules add concrete capabilities, skills teach the model how to think/use them
 - **Bilingual** &mdash; English and Spanish locale packs out of the box
 - **Self-aware** &mdash; knows its capabilities, gaps, and recommended LLM tiers
@@ -242,8 +324,10 @@ Built-in handlers for `task`, `note`, and `memory`. Anything else plugs in via M
 - **Persistent memory** &mdash; SQLite + FTS5 for tasks, notes, and facts
 - **Live runtime** &mdash; FastAPI + WebSocket with heartbeat and session pruning
 - **MCP runtime** &mdash; load MCP servers declared by modules
-- **Module catalog + uploads** &mdash; install from catalog or upload a custom `module.yaml`/zip
-- **Tested** &mdash; 148 tests covering brain, memory, web surfaces, marketplace, OAuth, MCP runtime, personality swap (including disk-snapshot guarantees)
+- **Module catalog + uploads** &mdash; install from catalog, marketplace, GitHub, or upload a custom `module.yaml`/zip
+- **skills.sh integration** &mdash; browse and install skills from skills.sh marketplace feed
+- **Structured output** &mdash; `<agent-ui>` tags for rich responses in the dashboard
+- **Tested** &mdash; 398 tests covering brain, memory, web surfaces, marketplace, OAuth, MCP runtime, personality swap, terminal security, REST API, hot reload, API keys, remote install, instance isolation, config CLI, lifecycle hooks (including disk-snapshot guarantees)
 
 ## Packaging model
 
@@ -298,19 +382,23 @@ lumen/
 │   ├── memory.py         # SQLite + FTS5
 │   ├── session.py        # Per-conversation state
 │   ├── connectors.py     # Connector registry + tool schemas
-│   ├── handlers.py       # Built-in handlers (task, note, memory)
-│   ├── installer.py      # Module install / uninstall
+│   ├── handlers.py       # Built-in handlers (task, note, memory, terminal)
+│   ├── installer.py      # Module install / uninstall / GitHub remote install
 │   ├── runtime.py        # active_personality boot + hot reload
+│   ├── paths.py          # Instance-aware path resolution
+│   ├── api_keys.py       # API key management (SHA-256 hashed)
+│   ├── secrets_store.py  # Module secrets storage per instance
+│   ├── module_runtime.py # Module lifecycle + hooks (install, configure, uninstall)
 │   └── mcp.py            # MCP client adapter
 ├── channels/
-│   ├── web.py            # FastAPI + WebSocket dashboard
+│   ├── web.py            # FastAPI + WebSocket dashboard + REST API
 │   └── templates/        # Dashboard, setup wizard, awakening
 ├── locales/{en,es}/      # Language packs
 ├── catalog/              # Built-in catalog (kits + installable modules)
 ├── modules/              # Installed modules (user-managed)
 ├── connectors/           # Built-in connector definitions
 ├── skills/               # Skill definitions (SKILL.md)
-└── cli/main.py           # CLI (lumen run, lumen install, lumen status)
+└── cli/main.py           # CLI (run, serve, reload, config, module, api-key, status)
 ```
 
 ## Module manifests
@@ -386,9 +474,19 @@ api_key: "fake"
 - [x] Module marketplace (personality-first display)
 - [x] MCP client adapter
 - [x] OpenRouter OAuth + free-tier curation
-- [x] Comprehensive test suite (148 tests)
-- [x] CONTRIBUTING.md tutorial
 - [x] Channel modules (`x-lumen-comunicacion-*`: Telegram, WhatsApp, Discord, Email)
+- [x] Terminal connector (allowlist/denylist security, timeout, truncation)
+- [x] REST API (`POST /api/chat` with Bearer auth)
+- [x] Health check endpoint (`GET /health`)
+- [x] skills.sh marketplace integration
+- [x] Instance isolation (`--instance` / `--data-dir` flags)
+- [x] Config CLI (`lumen config set/get/delete/list`)
+- [x] Module lifecycle hooks (`on_configure`)
+- [x] Hot reload (`POST /api/reload` + `lumen reload` CLI)
+- [x] Remote module install (`github:owner/repo` + URL support)
+- [x] API key management (generate/revoke/list with SHA-256 hashing)
+- [x] Comprehensive test suite (398 tests)
+- [x] CONTRIBUTING.md tutorial
 - [ ] Public module registry / discovery
 - [ ] Docker support
 - [ ] Full hosted documentation

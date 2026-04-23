@@ -180,6 +180,39 @@ def run_module_uninstall_hook(
     shutil.rmtree(context.runtime_dir, ignore_errors=True)
 
 
+def run_module_configure_hook(
+    *,
+    name: str,
+    module_dir: Path,
+    runtime_root: Path,
+    config: dict[str, Any] | None = None,
+    lumen_dir: Path | None = None,
+) -> None:
+    """Run the on_configure lifecycle hook for a module.
+
+    Called when module secrets/config are saved. Module can define
+    ``configure(context)`` in its connector.py to react (e.g. test
+    API connection, validate tokens).
+
+    Errors are logged but do NOT propagate — secrets are still saved.
+    """
+    module = _load_runtime_module(module_dir, name)
+    if module is None or not hasattr(module, "configure"):
+        return
+
+    context = _build_context(
+        name=name,
+        module_dir=module_dir,
+        runtime_root=runtime_root,
+        config=config,
+        lumen_dir=lumen_dir,
+    )
+    try:
+        module.configure(context)
+    except Exception as exc:
+        logger.warning("on_configure hook failed for %s: %s", name, exc)
+
+
 @dataclass
 class LoadedModuleRuntime:
     module: ModuleType

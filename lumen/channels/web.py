@@ -26,6 +26,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from lumen import __version__
 from lumen.core.artifact_setup import (
     contract_from_mcp_server,
     load_mcp_overlay,
@@ -207,6 +208,19 @@ async def _persist_module_setup_slots(module_name: str, values: dict | None) -> 
     # Persist secrets to dedicated store AND config (migration cleans config later)
     if module_secrets:
         save_secrets_for_module(module_name, module_secrets)
+
+        # Trigger on_configure lifecycle hook if module defines one
+        from lumen.core.module_runtime import run_module_configure_hook
+        module_dir = PKG_DIR / "modules" / module_name
+        if module_dir.is_dir():
+            run_module_configure_hook(
+                name=module_name,
+                module_dir=module_dir,
+                runtime_root=LUMEN_DIR / "modules",
+                config=_config,
+                lumen_dir=LUMEN_DIR,
+            )
+
     _config = _merge_save_config({"secrets": merged.get("secrets", {})})
 
     if _brain is not None:
@@ -1107,6 +1121,31 @@ session_manager = SessionManager()
 # ─── Routes ───
 
 
+# ─── Health Check ───
+
+
+@app.get("/health")
+async def health_check():
+    """Public health endpoint for monitoring and load balancers.
+
+    No authentication required. Returns basic status info.
+    """
+    modules_ready = 0
+    if _brain and _brain.registry:
+        modules_ready = len(
+            [
+                c
+                for c in _brain.registry.list_by_kind(CapabilityKind.MODULE)
+                if c.is_ready()
+            ]
+        )
+    return {
+        "ok": _brain is not None,
+        "version": __version__,
+        "modules_ready": modules_ready,
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
     """Smart routing: setup → awakening → dashboard."""
@@ -1587,6 +1626,97 @@ async def api_history(request: Request, session_id: str):
         return {"messages": []}
 
 
+# ─── REST Chat API ───
+
+
+def _validate_bearer_token(request: Request) -> str | None:
+    """Validate Authorization: Bearer <key> header.
+
+    Checks against:
+    1. LUMEN_API_KEY env var
+    2. config.api.rest_key
+    3. api_keys.yaml (hashed keys from lumen api-key generate)
+    Returns None if valid, or an error string if invalid/missing.
+    """
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return "unauthorized"
+
+    token = auth_header[7:].strip()
+    if not token:
+        return "unauthorized"
+
+    # Check env var first
+    valid_key = os.environ.get("LUMEN_API_KEY")
+    if valid_key and token == valid_key:
+        return None  # Valid
+
+    # Check config
+    api_config = _config.get("api", {})
+    if isinstance(api_config, dict):
+        config_key = api_config.get("rest_key")
+        if config_key and token == config_key:
+            return None  # Valid
+
+    # Check api_keys.yaml (hashed keys)
+    try:
+        from lumen.core.api_keys import verify_api_key
+        keys_path = LUMEN_DIR / "api_keys.yaml"
+        if verify_api_key(token, keys_path=keys_path):
+            return None  # Valid
+    except Exception:
+        pass  # If api_keys module fails, continue with other checks
+
+    return "unauthorized"
+
+
+@app.post("/api/chat")
+async def api_chat(request: Request):
+    """HTTP REST chat endpoint for external applications.
+
+    Body: {"message": "...", "session_id?": "..."}
+    Response: {"response": "...", "session_id": "..."}
+    Auth: Bearer token via LUMEN_API_KEY env or config.api.rest_key
+    """
+    auth_error = _validate_bearer_token(request)
+    if auth_error:
+        return JSONResponse(status_code=401, content={"error": auth_error})
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "invalid JSON"})
+
+    if not isinstance(body, dict):
+        return JSONResponse(status_code=400, content={"error": "expected JSON object"})
+
+    message = str(body.get("message", "")).strip()
+    if not message:
+        return JSONResponse(
+            status_code=400, content={"error": "message is required"}
+        )
+
+    if not _brain:
+        return JSONResponse(
+            status_code=503, content={"error": "Lumen not ready"}
+        )
+
+    session_id = body.get("session_id")
+    session = session_manager.get_or_create(session_id)
+
+    try:
+        result = await _brain.think(message, session)
+    except Exception as e:
+        return JSONResponse(
+            status_code=500, content={"error": str(e)}
+        )
+
+    return {
+        "response": result.get("message", ""),
+        "session_id": session.session_id,
+    }
+
+
 @app.websocket("/ws/{session_id}")
 async def websocket_chat(websocket: WebSocket, session_id: str):
     """Real-time chat via WebSocket."""
@@ -1817,6 +1947,46 @@ async def api_marketplace(request: Request):
             content={"error": "Marketplace service not initialized"},
         )
     return marketplace.snapshot()
+
+
+@app.post("/api/reload")
+async def api_reload(request: Request):
+    """Trigger a runtime reload — re-discovers modules, refreshes registry.
+
+    Auth: Bearer token required (LUMEN_API_KEY env or config.api.rest_key).
+    """
+    auth_error = _validate_bearer_token(request)
+    if auth_error:
+        return JSONResponse(status_code=401, content={"error": auth_error})
+
+    if not _brain:
+        return JSONResponse(status_code=503, content={"error": "Lumen not ready"})
+
+    try:
+        await sync_runtime_modules(
+            _brain, config=_config, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR
+        )
+        refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, active_channels=["web"])
+        reload_runtime_personality_surface(_brain, config=_config, pkg_dir=PKG_DIR)
+
+        # Count capabilities in the refreshed registry
+        module_count = 0
+        if _brain.registry:
+            all_caps = _brain.registry.list_by_kind(CapabilityKind.MODULE) if hasattr(CapabilityKind, "MODULE") else []
+            module_count = len(all_caps) if all_caps else 0
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "reloaded",
+                "modules": module_count,
+            },
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"reload failed: {e}"},
+        )
 
 
 @app.post("/api/modules/install/{name}")

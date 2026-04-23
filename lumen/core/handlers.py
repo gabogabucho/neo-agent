@@ -4,12 +4,20 @@ Without these, connectors are empty plugs. These handlers wire them to
 real actions: saving tasks to memory, listing notes, searching, etc.
 """
 
+import asyncio
 import json
+import shlex
 import time
+from pathlib import Path
 from typing import Any
 
 from lumen.core.connectors import ConnectorRegistry
 from lumen.core.memory import Memory
+
+
+# --- Output limits ---
+
+_MAX_OUTPUT_BYTES = 10 * 1024  # 10KB per stream (stdout/stderr)
 
 
 # --- Tool schemas for LLM function calling ---
@@ -149,7 +157,141 @@ TOOL_SCHEMAS: dict[str, dict] = {
             "required": ["query"],
         },
     },
+    "terminal__execute": {
+        "description": (
+            "Execute a shell command on the host system. "
+            "Commands must be in the configured allowlist. "
+            "Returns stdout, stderr, and exit code separately."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "The command to execute (e.g. 'echo hello')",
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "Timeout in seconds (default 30)",
+                },
+                "cwd": {
+                    "type": "string",
+                    "description": "Working directory for the command",
+                },
+            },
+            "required": ["command"],
+        },
+    },
 }
+
+
+def _check_command_allowed(base_command: str, config: dict) -> bool:
+    """Check if a command is allowed by the terminal security policy.
+
+    Default: deny-all. Commands are only allowed if:
+    1. terminal.allowlist is configured AND
+    2. base_command is in the allowlist AND
+    3. base_command is NOT in the denylist
+    """
+    terminal_config = config.get("terminal", {})
+    if isinstance(terminal_config, str):
+        return False
+
+    allowlist = terminal_config.get("allowlist", [])
+    if not allowlist:
+        return False
+
+    if base_command not in allowlist:
+        return False
+
+    denylist = terminal_config.get("denylist", [])
+    if base_command in denylist:
+        return False
+
+    return True
+
+
+def _truncate_output(data: bytes, max_bytes: int = _MAX_OUTPUT_BYTES) -> tuple[str, bool]:
+    """Truncate output bytes and return (decoded_text, was_truncated)."""
+    truncated = len(data) > max_bytes
+    if truncated:
+        data = data[:max_bytes]
+    return data.decode("utf-8", errors="replace"), truncated
+
+
+async def terminal_execute(
+    command: str = "",
+    timeout: int = 30,
+    cwd: str = "",
+    config: dict | None = None,
+    **_: Any,
+) -> dict:
+    """Execute a shell command with security controls.
+
+    Uses asyncio.create_subprocess_exec (NOT shell) for safety.
+    Enforces allowlist/denylist, timeout, and output truncation.
+    """
+    if not command or not command.strip():
+        return {"error": "command is required", "exit_code": -1}
+
+    config = config or {}
+    parts = shlex.split(command, posix=True)
+    if not parts:
+        return {"error": "command is required", "exit_code": -1}
+
+    base_command = Path(parts[0]).name  # Extract base name (e.g. /usr/bin/git → git)
+
+    if not _check_command_allowed(base_command, config):
+        return {
+            "error": "command_not_allowed",
+            "command": base_command,
+            "exit_code": -1,
+        }
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *parts,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=cwd or None,
+        )
+    except FileNotFoundError:
+        return {
+            "error": "command_not_found",
+            "command": base_command,
+            "exit_code": 127,
+        }
+    except PermissionError:
+        return {
+            "error": "permission_denied",
+            "command": base_command,
+            "exit_code": 126,
+        }
+
+    try:
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(
+            proc.communicate(), timeout=timeout
+        )
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        return {
+            "error": "timeout",
+            "exit_code": -1,
+            "command": base_command,
+        }
+
+    stdout_text, stdout_truncated = _truncate_output(stdout_bytes)
+    stderr_text, stderr_truncated = _truncate_output(stderr_bytes)
+
+    result: dict[str, Any] = {
+        "stdout": stdout_text,
+        "stderr": stderr_text,
+        "exit_code": proc.returncode if proc.returncode is not None else -1,
+    }
+    if stdout_truncated or stderr_truncated:
+        result["truncated"] = True
+    return result
 
 
 def register_builtin_handlers(registry: ConnectorRegistry, memory: Memory):
@@ -261,6 +403,11 @@ def register_builtin_handlers(registry: ConnectorRegistry, memory: Memory):
         mem.register_handler("write", memory_write)
         mem.register_handler("read", memory_read)
         mem.register_handler("search", memory_search)
+
+    # --- Terminal handler ---
+    term = registry.get("terminal")
+    if term:
+        term.register_handler("execute", terminal_execute)
 
     # --- Apply tool schemas to registry ---
     registry.set_tool_schemas(TOOL_SCHEMAS)

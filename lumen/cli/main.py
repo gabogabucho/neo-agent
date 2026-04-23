@@ -13,8 +13,9 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 
 from lumen import __version__
+from lumen.core.paths import resolve_lumen_dir
 from lumen.core.registry import CapabilityKind
-from lumen.core.runtime import bootstrap_runtime
+from lumen.core.runtime import bootstrap_runtime, refresh_runtime_registry, reload_runtime_personality_surface, sync_runtime_modules
 
 BRAND = "#3d3d6d"
 BRAND_DIM = "#6b6baa"
@@ -57,10 +58,11 @@ console = Console()
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 
-def _load_persisted_config() -> dict:
-    if not CONFIG_PATH.exists():
+def _load_persisted_config(config_path: Path | None = None) -> dict:
+    path = config_path or CONFIG_PATH
+    if not path.exists():
         return {}
-    loaded = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
+    loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return loaded if isinstance(loaded, dict) else {}
 
 
@@ -69,7 +71,11 @@ def _is_runtime_configured(config: dict | None = None) -> bool:
     return bool(loaded.get("model"))
 
 
-def _prepare_runtime_if_configured(config: dict | None = None):
+def _prepare_runtime_if_configured(
+    config: dict | None = None,
+    *,
+    lumen_dir: Path | None = None,
+):
     loaded = config if config is not None else _load_persisted_config()
     if not _is_runtime_configured(loaded):
         return None, loaded
@@ -77,11 +83,12 @@ def _prepare_runtime_if_configured(config: dict | None = None):
     if loaded.get("api_key") and loaded.get("api_key_env"):
         os.environ[loaded["api_key_env"]] = loaded["api_key"]
 
+    resolved_lumen_dir = lumen_dir or LUMEN_DIR
     runtime = asyncio.run(
         bootstrap_runtime(
             loaded,
             pkg_dir=PKG_DIR,
-            lumen_dir=LUMEN_DIR,
+            lumen_dir=resolved_lumen_dir,
             active_channels=["web"],
         )
     )
@@ -143,6 +150,8 @@ def _main(ctx: typer.Context):
 @app.command()
 def run(
     port: int = typer.Option(3000, help="Dashboard port"),
+    instance: str = typer.Option(None, "--instance", "-i", help="Named instance (isolated data dir)"),
+    data_dir: str = typer.Option(None, "--data-dir", "-d", help="Custom data directory"),
 ):
     """Start Lumen — opens the dashboard in your browser.
 
@@ -150,10 +159,14 @@ def run(
     """
     from lumen.channels.web import app as web_app, configure, configure_access_mode
 
+    # Resolve instance-aware lumen directory
+    lumen_dir = resolve_lumen_dir(instance=instance, data_dir=data_dir)
+    config_path = lumen_dir / "config.yaml"
+
     configure_access_mode("run")
 
-    config = _load_persisted_config()
-    runtime, config = _prepare_runtime_if_configured(config)
+    config = _load_persisted_config(config_path)
+    runtime, config = _prepare_runtime_if_configured(config, lumen_dir=lumen_dir)
 
     if runtime is not None:
         configure(runtime.brain, runtime.locale, runtime.config, awareness=runtime.awareness)
@@ -198,6 +211,8 @@ def run(
 def server(
     host: str = typer.Option("0.0.0.0", help="Server bind host"),
     port: int = typer.Option(3000, help="Server bind port"),
+    instance: str = typer.Option(None, "--instance", "-i", help="Named instance (isolated data dir)"),
+    data_dir: str = typer.Option(None, "--data-dir", "-d", help="Custom data directory"),
 ):
     """Start Lumen in hosted/server mode with authenticated access."""
     from lumen.channels.web import (
@@ -207,15 +222,19 @@ def server(
         ensure_server_bootstrap,
     )
 
+    # Resolve instance-aware lumen directory
+    lumen_dir = resolve_lumen_dir(instance=instance, data_dir=data_dir)
+    config_path = lumen_dir / "config.yaml"
+
     configure_access_mode("serve")
 
-    config = _load_persisted_config()
-    runtime, config = _prepare_runtime_if_configured(config)
+    config = _load_persisted_config(config_path)
+    runtime, config = _prepare_runtime_if_configured(config, lumen_dir=lumen_dir)
     if runtime is not None:
         configure(runtime.brain, runtime.locale, runtime.config, awareness=runtime.awareness)
 
     setup_token = ensure_server_bootstrap(host=host, port=port)
-    current = _load_persisted_config()
+    current = _load_persisted_config(config_path)
     has_owner_secret = bool(current.get("owner_secret_hash"))
 
     display_host = "localhost" if host in ("0.0.0.0", "::") else host
@@ -369,6 +388,329 @@ def update():
             console.print("  [dim]If running from source, pull the latest from git.[/dim]")
     except Exception:
         console.print("  [dim]Could not reach PyPI. Check your connection.[/dim]")
+
+
+# ── config commands ──────────────────────────────────────────────────────────
+
+config_app = typer.Typer(
+    name="config",
+    help="Manage module configuration and secrets.",
+    no_args_is_help=True,
+)
+app.add_typer(config_app, name="config")
+
+
+def _redact(value: str) -> str:
+    """Show first 4 chars + **** for values > 4 chars."""
+    if len(value) <= 4:
+        return "****"
+    return value[:4] + "****"
+
+
+def _resolve_config_paths(instance: str | None, data_dir: str | None):
+    """Resolve lumen_dir and configure secrets_store for config commands."""
+    from lumen.core.secrets_store import configure_paths
+    lumen_dir = resolve_lumen_dir(instance=instance, data_dir=data_dir)
+    configure_paths(lumen_dir=lumen_dir)
+    return lumen_dir
+
+
+@config_app.command("set")
+def config_set(
+    key: str = typer.Argument(help="Module key (e.g. otto.store_id)"),
+    value: str = typer.Argument(help="Value to set"),
+    instance: str = typer.Option(None, "--instance", "-i", help="Named instance"),
+    data_dir: str = typer.Option(None, "--data-dir", "-d", help="Custom data dir"),
+):
+    """Set a module config value. Usage: lumen config set <module>.<key> <value>"""
+    parts = key.split(".", 1)
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        console.print("[red]Invalid key format. Use: <module>.<key>[/red]")
+        raise typer.Exit(1)
+
+    module_name, config_key = parts
+    _resolve_config_paths(instance, data_dir)
+
+    from lumen.core.secrets_store import save_module
+    save_module(module_name, {config_key: value})
+    console.print(f"[green]✓[/green] {module_name}.{config_key} = {_redact(value)}")
+
+
+@config_app.command("get")
+def config_get(
+    key: str = typer.Argument(help="Module key (e.g. otto.store_id)"),
+    instance: str = typer.Option(None, "--instance", "-i", help="Named instance"),
+    data_dir: str = typer.Option(None, "--data-dir", "-d", help="Custom data dir"),
+):
+    """Get a module config value. Usage: lumen config get <module>.<key>"""
+    parts = key.split(".", 1)
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        console.print("[red]Invalid key format. Use: <module>.<key>[/red]")
+        raise typer.Exit(1)
+
+    module_name, config_key = parts
+    _resolve_config_paths(instance, data_dir)
+
+    from lumen.core.secrets_store import load_module
+    secrets = load_module(module_name)
+    if config_key in secrets:
+        console.print(secrets[config_key])
+    else:
+        console.print(f"[dim]Key {key} not found.[/dim]")
+        raise typer.Exit(1)
+
+
+@config_app.command("delete")
+def config_delete(
+    key: str = typer.Argument(help="Module key (e.g. otto.store_id)"),
+    instance: str = typer.Option(None, "--instance", "-i", help="Named instance"),
+    data_dir: str = typer.Option(None, "--data-dir", "-d", help="Custom data dir"),
+):
+    """Delete a module config value. Usage: lumen config delete <module>.<key>"""
+    parts = key.split(".", 1)
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        console.print("[red]Invalid key format. Use: <module>.<key>[/red]")
+        raise typer.Exit(1)
+
+    module_name, config_key = parts
+    _resolve_config_paths(instance, data_dir)
+
+    from lumen.core.secrets_store import delete_module_key
+    delete_module_key(module_name, config_key)
+    console.print(f"[green]✓[/green] Deleted {module_name}.{config_key}")
+
+
+@config_app.command("list")
+def config_list(
+    module: str = typer.Argument(help="Module name"),
+    instance: str = typer.Option(None, "--instance", "-i", help="Named instance"),
+    data_dir: str = typer.Option(None, "--data-dir", "-d", help="Custom data dir"),
+):
+    """List all config keys for a module (values redacted)."""
+    _resolve_config_paths(instance, data_dir)
+
+    from lumen.core.secrets_store import load_module
+    secrets = load_module(module)
+    if not secrets:
+        console.print(f"[dim]No config found for module '{module}'.[/dim]")
+        return
+
+    for k, v in secrets.items():
+        console.print(f"  {module}.{k} = {_redact(str(v))}")
+
+
+@app.command()
+def reload(
+    instance: str = typer.Option(None, "--instance", "-i", help="Named instance (isolated data dir)"),
+    data_dir: str = typer.Option(None, "--data-dir", "-d", help="Custom data directory"),
+):
+    """Reload Lumen's runtime — re-discover modules, refresh registry."""
+    lumen_dir = resolve_lumen_dir(instance=instance, data_dir=data_dir)
+    config_path = lumen_dir / "config.yaml"
+    config = _load_persisted_config(config_path)
+
+    if not _is_runtime_configured(config):
+        console.print("[red]Lumen is not configured.[/red]")
+        console.print("Run [bold]lumen run[/bold] to start the setup wizard.")
+        raise typer.Exit(1)
+
+    console.print("[dim]Reloading runtime...[/dim]")
+
+    try:
+        runtime = asyncio.run(
+            bootstrap_runtime(
+                config,
+                pkg_dir=PKG_DIR,
+                lumen_dir=lumen_dir,
+                active_channels=["web"],
+            )
+        )
+    except Exception as e:
+        console.print(f"[red]Failed to bootstrap runtime: {e}[/red]")
+        raise typer.Exit(1)
+
+    if runtime is None or runtime.brain is None:
+        console.print("[red]Runtime bootstrap returned no brain.[/red]")
+        raise typer.Exit(1)
+
+    brain = runtime.brain
+
+    try:
+        asyncio.run(
+            sync_runtime_modules(brain, config=config, pkg_dir=PKG_DIR, lumen_dir=lumen_dir)
+        )
+        refresh_runtime_registry(brain, pkg_dir=PKG_DIR, active_channels=["web"])
+        reload_runtime_personality_surface(brain, config=config, pkg_dir=PKG_DIR)
+    except Exception as e:
+        console.print(f"[red]Reload failed: {e}[/red]")
+        raise typer.Exit(1)
+
+    cap_count = len(brain.registry.list_all()) if brain.registry else 0
+    console.print(f"[green]✓[/green] Runtime reloaded — {cap_count} capabilities active")
+
+
+# ── module install commands ──────────────────────────────────────────────────
+
+def _parse_github_ref(ref: str) -> tuple[str | None, str | None]:
+    """Parse a GitHub reference into (owner, repo).
+
+    Supports:
+      github:owner/repo
+      https://github.com/owner/repo
+      https://github.com/owner/repo.git
+      owner/repo (bare shorthand)
+    """
+    ref = ref.strip()
+    if not ref:
+        return None, None
+
+    # github:owner/repo
+    if ref.startswith("github:"):
+        ref = ref[7:]
+
+    # https://github.com/owner/repo[.git]
+    if ref.startswith("https://github.com/"):
+        ref = ref[len("https://github.com/"):]
+    elif ref.startswith("http://github.com/"):
+        ref = ref[len("http://github.com/"):]
+
+    # Strip trailing .git
+    if ref.endswith(".git"):
+        ref = ref[:-4]
+
+    # Strip trailing slashes
+    ref = ref.rstrip("/")
+
+    parts = ref.split("/")
+    if len(parts) == 2 and parts[0] and parts[1]:
+        return parts[0], parts[1]
+
+    return None, None
+
+
+module_app = typer.Typer(
+    name="module",
+    help="Install and manage modules.",
+    no_args_is_help=True,
+)
+app.add_typer(module_app, name="module")
+
+
+@module_app.command("install")
+def module_install(
+    ref: str = typer.Argument(help="Module reference: github:owner/repo, URL, or catalog name"),
+    instance: str = typer.Option(None, "--instance", "-i", help="Named instance"),
+    data_dir: str = typer.Option(None, "--data-dir", "-d", help="Custom data dir"),
+):
+    """Install a module from GitHub or catalog.
+
+    Examples:
+      lumen module install github:acme/my-module
+      lumen module install https://github.com/acme/my-module
+      lumen module install my-module  (from catalog)
+    """
+    lumen_dir = resolve_lumen_dir(instance=instance, data_dir=data_dir)
+    config_path = lumen_dir / "config.yaml"
+    config = _load_persisted_config(config_path)
+
+    if not _is_runtime_configured(config):
+        console.print("[red]Lumen is not configured.[/red]")
+        console.print("Run [bold]lumen run[/bold] to start the setup wizard.")
+        raise typer.Exit(1)
+
+    from lumen.core.installer import Installer
+    from lumen.core.connectors import ConnectorRegistry
+
+    # Memory is optional for install — pass None
+    installer = Installer(
+        PKG_DIR,
+        ConnectorRegistry(),
+        memory=None,
+        lumen_dir=lumen_dir,
+        config=config,
+    )
+
+    # Try GitHub ref first
+    owner, repo = _parse_github_ref(ref)
+    if owner and repo:
+        console.print(f"[dim]Installing from github.com/{owner}/{repo}...[/dim]")
+        result = installer.install_from_github_ref(owner, repo)
+    else:
+        # Try catalog
+        console.print(f"[dim]Installing '{ref}' from catalog...[/dim]")
+        result = installer.install_from_catalog(ref)
+
+    if result.get("status") == "installed":
+        name = result.get("name", ref)
+        console.print(f"[green]✓[/green] Installed {name}")
+    else:
+        error = result.get("error", "Unknown error")
+        console.print(f"[red]✗[/red] {error}")
+        raise typer.Exit(1)
+
+
+# ── api-key commands ─────────────────────────────────────────────────────────
+
+apikey_app = typer.Typer(
+    name="api-key",
+    help="Manage API keys for REST authentication.",
+    no_args_is_help=True,
+)
+app.add_typer(apikey_app, name="api-key")
+
+
+def _resolve_api_keys_path(instance: str | None, data_dir: str | None) -> Path:
+    """Resolve the api_keys.yaml path for the given instance."""
+    lumen_dir = resolve_lumen_dir(instance=instance, data_dir=data_dir)
+    return lumen_dir / "api_keys.yaml"
+
+
+@apikey_app.command("generate")
+def apikey_generate(
+    label: str = typer.Option(..., "--label", "-l", help="Label for this API key"),
+    instance: str = typer.Option(None, "--instance", "-i", help="Named instance"),
+    data_dir: str = typer.Option(None, "--data-dir", "-d", help="Custom data dir"),
+):
+    """Generate a new API key. The key is shown ONCE — save it securely."""
+    from lumen.core.api_keys import generate_api_key
+    keys_path = _resolve_api_keys_path(instance, data_dir)
+    result = generate_api_key(label=label, keys_path=keys_path)
+    console.print(f"[green]✓[/green] API key generated for '{label}'")
+    console.print(f"  [bold yellow]Key: {result['key']}[/bold yellow]")
+    console.print(f"  Prefix: {result['prefix']}")
+    console.print(f"  [dim]Save this key now — it won't be shown again.[/dim]")
+
+
+@apikey_app.command("list")
+def apikey_list(
+    instance: str = typer.Option(None, "--instance", "-i", help="Named instance"),
+    data_dir: str = typer.Option(None, "--data-dir", "-d", help="Custom data dir"),
+):
+    """List all API keys (prefix and label only)."""
+    from lumen.core.api_keys import list_api_keys
+    keys_path = _resolve_api_keys_path(instance, data_dir)
+    keys = list_api_keys(keys_path=keys_path)
+    if not keys:
+        console.print("[dim]No API keys found.[/dim]")
+        return
+    for k in keys:
+        console.print(f"  {k['prefix']}...  {k['label']}  [dim]{k['created_at']}[/dim]")
+
+
+@apikey_app.command("revoke")
+def apikey_revoke(
+    prefix: str = typer.Argument(help="Key prefix to revoke (first 8 chars)"),
+    instance: str = typer.Option(None, "--instance", "-i", help="Named instance"),
+    data_dir: str = typer.Option(None, "--data-dir", "-d", help="Custom data dir"),
+):
+    """Revoke an API key by its prefix."""
+    from lumen.core.api_keys import revoke_api_key
+    keys_path = _resolve_api_keys_path(instance, data_dir)
+    removed = revoke_api_key(prefix, keys_path=keys_path)
+    if removed:
+        console.print(f"[green]✓[/green] Revoked key {prefix}...")
+    else:
+        console.print(f"[dim]No key found with prefix '{prefix}'.[/dim]")
 
 
 @app.command()

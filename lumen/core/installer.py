@@ -192,6 +192,9 @@ class Installer:
         if source_type == "mcp-registry":
             return self._install_from_mcp_registry(item)
 
+        if source_type == "skills-sh":
+            return self._install_from_skills_sh(item)
+
         return {
             "status": "error",
             "error": f"Unsupported install source: {source_type or 'unknown'}",
@@ -441,6 +444,228 @@ class Installer:
         return {
             "status": "error",
             "error": "This MCP Registry entry has no local stdio install path yet.",
+        }
+
+    def _install_from_skills_sh(self, item: dict) -> dict:
+        """Install a skill from skills.sh via npx CLI or GitHub fallback."""
+        name = str(item.get("name") or "").strip()
+        owner = str(item.get("owner") or "").strip()
+        repo = str(item.get("repo") or "").strip()
+        skill_name = str(item.get("skill_name") or name.split("/")[-1] if "/" in name else name).strip()
+
+        if not name:
+            return {"status": "error", "error": "Missing skill name"}
+
+        # Try npx first
+        npx = shutil.which("npx")
+        if npx:
+            result = subprocess.run(
+                [npx, "skills", "add", f"{owner}/{repo}", "--skill", skill_name, "-g", "-y"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=60,
+            )
+            if result.returncode != 0:
+                # Fallback to GitHub
+                return self._install_from_github(owner, repo, skill_name)
+
+            # Detect installed module
+            module_dir = self._detect_new_module_dir(set(), skill_name)
+            if module_dir is None:
+                return self._install_from_github(owner, repo, skill_name)
+
+            run_module_install_hook(
+                name=skill_name,
+                module_dir=module_dir,
+                runtime_root=self.lumen_dir / "modules",
+                config=self.config,
+                lumen_dir=self.lumen_dir,
+            )
+            return {
+                "status": "installed",
+                "name": skill_name,
+                "display_name": item.get("display_name", skill_name),
+                "description": item.get("description", ""),
+            }
+
+        # No npx — use GitHub fallback
+        return self._install_from_github(owner, repo, skill_name)
+
+    def _install_from_github(self, owner: str, repo: str, skill_name: str) -> dict:
+        """Fetch SKILL.md directly from GitHub raw URL."""
+        if not owner or not repo:
+            return {"status": "error", "error": "Missing owner/repo for GitHub fetch"}
+
+        from urllib.request import urlopen
+        from urllib.error import URLError
+
+        # Try common paths for SKILL.md
+        for path in [f"{skill_name}/SKILL.md", "SKILL.md"]:
+            url = f"https://raw.githubusercontent.com/{owner}/{repo}/main/{path}"
+            try:
+                with urlopen(url, timeout=10) as response:
+                    content = response.read().decode("utf-8")
+                # Save to skills directory
+                skill_dir = self.installed_dir / skill_name
+                skill_dir.mkdir(parents=True, exist_ok=True)
+                (skill_dir / "SKILL.md").write_text(content, encoding="utf-8")
+
+                # Generate a minimal manifest so Lumen discovers it
+                manifest = {
+                    "name": skill_name,
+                    "display_name": skill_name.replace("-", " ").replace("_", " ").title(),
+                    "description": f"Skill from skills.sh ({owner}/{repo})",
+                    "version": "0.1.0",
+                    "tags": ["skill", "skills-sh"],
+                    "provides": [],
+                }
+                import yaml
+                (skill_dir / "module.yaml").write_text(
+                    yaml.dump(manifest, default_flow_style=False),
+                    encoding="utf-8",
+                )
+
+                run_module_install_hook(
+                    name=skill_name,
+                    module_dir=skill_dir,
+                    runtime_root=self.lumen_dir / "modules",
+                    config=self.config,
+                    lumen_dir=self.lumen_dir,
+                )
+                return {
+                    "status": "installed",
+                    "name": skill_name,
+                    "display_name": manifest["display_name"],
+                    "description": manifest["description"],
+                }
+            except Exception:
+                continue
+
+        return {
+            "status": "error",
+            "error": f"Could not fetch SKILL.md from github.com/{owner}/{repo}",
+        }
+
+    def install_from_github_ref(self, owner: str, repo: str) -> dict:
+        """Install a module from a GitHub repo by downloading the zip archive.
+
+        Looks for module.yaml or SKILL.md in the repo root.
+        Returns {"status": "installed", "name": ...} or {"status": "error", ...}.
+        """
+        from urllib.request import urlopen
+        from urllib.error import URLError
+
+        if not owner or not repo:
+            return {"status": "error", "error": "Missing owner/repo for GitHub install"}
+
+        # Strip .git suffix if present
+        if repo.endswith(".git"):
+            repo = repo[:-4]
+
+        zip_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/main.zip"
+
+        try:
+            with urlopen(zip_url, timeout=30) as response:
+                zip_bytes = response.read()
+        except URLError:
+            # Try 'master' branch as fallback
+            zip_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/master.zip"
+            try:
+                with urlopen(zip_url, timeout=30) as response:
+                    zip_bytes = response.read()
+            except Exception as e:
+                return {"status": "error", "error": f"Could not fetch repo from github.com/{owner}/{repo}: {e}"}
+        except Exception as e:
+            return {"status": "error", "error": f"Could not fetch repo from github.com/{owner}/{repo}: {e}"}
+
+        # Extract and find module.yaml or SKILL.md
+        try:
+            zip_file = zipfile.ZipFile(io.BytesIO(zip_bytes))
+        except Exception as e:
+            return {"status": "error", "error": f"Invalid zip from github.com/{owner}/{repo}: {e}"}
+
+        # GitHub zips have a root prefix like "repo-main/"
+        namelist = zip_file.namelist()
+        root_prefix = ""
+        if namelist:
+            first = namelist[0]
+            slash_idx = first.find("/")
+            if slash_idx > 0:
+                root_prefix = first[:slash_idx + 1]
+
+        # Look for module.yaml in root
+        module_yaml_path = None
+        skill_md_path = None
+        for name in namelist:
+            rel = name[len(root_prefix):] if root_prefix and name.startswith(root_prefix) else name
+            if rel == "module.yaml":
+                module_yaml_path = name
+            elif rel == "SKILL.md":
+                skill_md_path = name
+
+        if not module_yaml_path and not skill_md_path:
+            return {
+                "status": "error",
+                "error": f"No module.yaml or SKILL.md found in github.com/{owner}/{repo}",
+            }
+
+        # Determine module name
+        module_name = repo
+        if module_yaml_path:
+            manifest_content = zip_file.read(module_yaml_path).decode("utf-8")
+            manifest_data = yaml.safe_load(manifest_content) or {}
+            module_name = str(manifest_data.get("name") or repo)
+
+        # Install to modules directory
+        module_dir = self.installed_dir / module_name
+        module_dir.mkdir(parents=True, exist_ok=True)
+
+        # Extract relevant files
+        for name in namelist:
+            rel = name[len(root_prefix):] if root_prefix and name.startswith(root_prefix) else name
+            if not rel or rel.endswith("/"):
+                continue
+            # Only extract files from the root of the repo (no deep nesting)
+            parts = rel.split("/")
+            if len(parts) <= 2:  # root or one level deep
+                target = module_dir / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(zip_file.read(name))
+
+        # If only SKILL.md found, generate a minimal module.yaml
+        if not module_yaml_path and skill_md_path:
+            display_name = module_name.replace("-", " ").replace("_", " ").title()
+            manifest = {
+                "name": module_name,
+                "display_name": display_name,
+                "description": f"Skill from github.com/{owner}/{repo}",
+                "version": "0.1.0",
+                "tags": ["skill", "github"],
+                "provides": [],
+            }
+            (module_dir / "module.yaml").write_text(
+                yaml.dump(manifest, default_flow_style=False),
+                encoding="utf-8",
+            )
+
+        zip_file.close()
+
+        # Run install hook
+        run_module_install_hook(
+            name=module_name,
+            module_dir=module_dir,
+            runtime_root=self.lumen_dir / "modules",
+            config=self.config,
+            lumen_dir=self.lumen_dir,
+        )
+
+        display_name = module_name.replace("-", " ").replace("_", " ").title()
+        return {
+            "status": "installed",
+            "name": module_name,
+            "display_name": display_name,
+            "description": f"Installed from github.com/{owner}/{repo}",
         }
 
     def _detect_new_module_dir(self, before: set[str], slug: str) -> Path | None:

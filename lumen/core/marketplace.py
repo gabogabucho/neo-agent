@@ -456,12 +456,19 @@ class Marketplace:
         # - Native Lumen feeds: {skills: [...], mcps: [...]} (or legacy {items})
         # - ClawHub API v1:     {results: [{slug, displayName, summary, ...}]}
         # - MCP Registry v0:    {servers: [{server: {name, description, remotes, ...}}]}
+        # - skills.sh API:      {skills: [{name, owner, repo, ...}]}
         if "results" in payload and "skills" not in payload and "mcps" not in payload:
             return self._parse_clawhub_payload(
                 payload, source_name, source_type, runtime_surface
             )
         if "servers" in payload and "skills" not in payload and "mcps" not in payload:
             return self._parse_mcp_registry_payload(
+                payload, source_name, source_type, runtime_surface
+            )
+        # skills.sh payloads have items with "owner" field
+        skills_items = payload.get("skills", [])
+        if isinstance(skills_items, list) and skills_items and isinstance(skills_items[0], dict) and "owner" in skills_items[0]:
+            return self._parse_skills_sh_payload(
                 payload, source_name, source_type, runtime_surface
             )
 
@@ -526,13 +533,7 @@ class Marketplace:
         source_type: str,
         runtime_surface: dict[str, Any],
     ):
-        """Anthropic MCP Registry /v0/servers → Lumen mcps cards.
-
-        Items look like:
-          {server: {name, title, description, version, remotes[], repository}, _meta: {...}}
-        Remote transports (sse, streamable-http) are listed but flagged as
-        unsupported by the current Lumen MCP runtime (stdio only).
-        """
+        """Anthropic MCP Registry /v0/servers → Lumen mcps cards."""
         entries: list[tuple[str, dict[str, Any]]] = []
         for item in payload.get("servers", []):
             raw = _mcp_registry_item_to_mcp_raw(item)
@@ -541,6 +542,26 @@ class Marketplace:
             card = self._remote_mcp_card(raw, runtime_surface, source_name, source_type)
             if card:
                 entries.append(("mcps", card))
+        return entries
+
+    def _parse_skills_sh_payload(
+        self,
+        payload: dict[str, Any],
+        source_name: str,
+        source_type: str,
+        runtime_surface: dict[str, Any],
+    ):
+        """skills.sh API → Lumen skill cards."""
+        entries: list[tuple[str, dict[str, Any]]] = []
+        for item in payload.get("skills", []):
+            raw = _skills_sh_item_to_skill_raw(item)
+            if not raw:
+                continue
+            card = self._remote_skill_card(
+                raw, runtime_surface, source_name, source_type
+            )
+            if card:
+                entries.append(("skills", card))
         return entries
 
     def _remote_skill_card(
@@ -823,6 +844,10 @@ DEFAULT_FEEDS: list[dict[str, str]] = [
         "name": "ClawHub",
         "url": "https://clawhub.ai/api/v1/search?q=skill&limit=50",
     },
+    {
+        "name": "skills.sh",
+        "url": "https://skills.sh/api/v1/skills?limit=50",
+    },
 ]
 
 
@@ -851,6 +876,43 @@ def _clawhub_item_to_skill_raw(item: Any) -> dict[str, Any] | None:
         "source_url": f"https://clawhub.ai/skills/{slug}",
         "provides": [],
         "requires": {},
+    }
+
+
+def _skills_sh_item_to_skill_raw(item: Any) -> dict[str, Any] | None:
+    """Map a skills.sh API result into the native skill raw shape.
+
+    Input:  {name, owner, repo, description, installs?, stars?}
+    Output: dict compatible with _remote_skill_card / normalize_openclaw_metadata.
+    """
+    if not isinstance(item, dict):
+        return None
+    name = str(item.get("name") or "").strip()
+    owner = str(item.get("owner") or "").strip()
+    repo = str(item.get("repo") or item.get("repository") or "").strip()
+    if not name:
+        return None
+
+    full_name = f"{owner}/{repo}/{name}" if owner and repo else name
+    install_target = f"skills add {owner}/{repo} --skill {name}" if owner and repo else ""
+
+    return {
+        "name": full_name,
+        "display_name": item.get("display_name") or name,
+        "description": item.get("description") or "",
+        "version": str(item.get("version") or "latest"),
+        "tags": ["skills-sh", "skill"],
+        "install": {
+            "method": "npx",
+            "target": install_target,
+        },
+        "source_url": f"https://github.com/{owner}/{repo}" if owner and repo else "",
+        "provides": [],
+        "requires": {},
+        "metadata": {
+            "installs": item.get("installs", 0),
+            "stars": item.get("stars", 0),
+        },
     }
 
 

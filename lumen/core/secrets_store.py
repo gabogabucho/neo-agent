@@ -66,6 +66,17 @@ def delete_module(module_name: str) -> None:
     _write(all_secrets)
 
 
+def delete_module_key(module_name: str, key: str) -> None:
+    """Remove a single key from a module's secrets."""
+    all_secrets = load_all()
+    bucket = all_secrets.get(module_name)
+    if isinstance(bucket, dict):
+        bucket.pop(key, None)
+        if not bucket:
+            all_secrets.pop(module_name, None)
+        _write(all_secrets)
+
+
 def _write(all_secrets: dict) -> None:
     """Write the full secrets dict to disk."""
     LUMEN_DIR.mkdir(parents=True, exist_ok=True)

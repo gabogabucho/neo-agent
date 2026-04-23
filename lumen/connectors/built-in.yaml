@@ -22,3 +22,7 @@
 - name: note
   description: "Create, list, search, and delete notes"
   actions: [create, list, search, delete]
+
+- name: terminal
+  description: "Execute shell commands on the host system with security controls"
+  actions: [execute]
