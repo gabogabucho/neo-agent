@@ -1641,7 +1641,7 @@ def _validate_bearer_token(request: Request) -> str | None:
 
     Checks against:
     1. LUMEN_API_KEY env var
-    2. config.api.rest_key
+    2. config.api.rest_key (from _config AND directly from CONFIG_PATH)
     3. api_keys.yaml (hashed keys from lumen api-key generate)
     Returns None if valid, or an error string if invalid/missing.
     """
@@ -1658,12 +1658,25 @@ def _validate_bearer_token(request: Request) -> str | None:
     if valid_key and token == valid_key:
         return None  # Valid
 
-    # Check config
+    # Check _config (in-memory, may lack api section)
     api_config = _config.get("api", {})
     if isinstance(api_config, dict):
         config_key = api_config.get("rest_key")
         if config_key and token == config_key:
             return None  # Valid
+
+    # Check CONFIG_PATH directly (raw YAML, always has api section)
+    if CONFIG_PATH.exists():
+        try:
+            raw = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
+            if isinstance(raw, dict):
+                raw_api = raw.get("api", {})
+                if isinstance(raw_api, dict):
+                    raw_key = raw_api.get("rest_key")
+                    if raw_key and token == raw_key:
+                        return None  # Valid
+        except Exception:
+            pass
 
     # Check api_keys.yaml (hashed keys)
     try:
