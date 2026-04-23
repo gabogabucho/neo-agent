@@ -25,6 +25,7 @@ class BrainStub:
         self.connectors = ConnectorRegistry()
         self.flows = []
         self.memory = None
+        self.config = {}
         self.module_manager = MagicMock()
         self.mcp_manager = MagicMock()
         self.mcp_manager.discovery_payload.return_value = None
@@ -307,6 +308,7 @@ class ReloadCLICommandTests(unittest.TestCase):
         assert result.exit_code == 0
         assert mock_sync.call_args.kwargs["config"] == mock_runtime.config
         assert mock_reload_surface.call_args.kwargs["config"] == mock_runtime.config
+        assert mock_runtime.brain.config == mock_runtime.config
 
 
 class ReloadConfigHydrationTests(unittest.TestCase):
@@ -357,6 +359,7 @@ class ReloadConfigHydrationTests(unittest.TestCase):
         assert response.status_code == 200
         assert mock_sync.call_args.kwargs["config"] == web._config
         assert mock_reload_surface.call_args.kwargs["config"] == web._config
+        assert web._brain.config == web._config
 
 
 if __name__ == "__main__":

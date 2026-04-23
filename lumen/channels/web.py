@@ -2015,6 +2015,8 @@ async def api_reload(request: Request):
 
     try:
         _config = rehydrate_runtime_config(_config, lumen_dir=LUMEN_DIR)
+        if getattr(_brain, "config", None) is not None:
+            _brain.config = _config
         await sync_runtime_modules(
             _brain, config=_config, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR
         )

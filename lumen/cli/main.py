@@ -657,6 +657,8 @@ def reload(
     brain = runtime.brain
     config = rehydrate_runtime_config(runtime.config, lumen_dir=lumen_dir)
     runtime.config = config
+    if getattr(brain, "config", None) is not None:
+        brain.config = config
 
     try:
         asyncio.run(
