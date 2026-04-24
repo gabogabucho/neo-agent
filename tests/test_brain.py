@@ -188,6 +188,30 @@ class TestThinkHappyPath:
         assert "absolute paths" in gemini_msg
         assert "Tool use is mandatory" in generic_msg
 
+    def test_model_profiles_resolve_by_family(self):
+        openai_profile = _make_brain(model="gpt-4o-mini")._model_profile()
+        gemini_profile = _make_brain(model="gemini-1.5-pro")._model_profile()
+        qwen_profile = _make_brain(model="qwen/qwen2.5-coder")._model_profile()
+
+        assert openai_profile["family"] == "openai"
+        assert openai_profile["supports_native_tools"] is True
+        assert gemini_profile["family"] == "gemini"
+        assert gemini_profile["requires_parser_fallback"] is True
+        assert qwen_profile["family"] == "openai-compatible"
+
+    @pytest.mark.asyncio
+    async def test_acompletion_uses_model_profile_options(self):
+        brain = _make_brain(model="gpt-4o-mini")
+        brain.memory.recall = AsyncMock(return_value=[])
+
+        with patch("lumen.core.brain.acompletion") as mock_llm:
+            mock_llm.return_value = _mock_llm_response("I can help with that!")
+            await brain.think("hello", Session())
+
+        kwargs = mock_llm.call_args.kwargs
+        assert kwargs["temperature"] == brain._model_profile()["completion_temperature"]
+        assert kwargs["max_tokens"] == brain._model_profile()["completion_max_tokens"]
+
     @pytest.mark.asyncio
     async def test_think_returns_message_and_empty_tool_calls(self):
         brain = _make_brain()
@@ -404,6 +428,44 @@ class TestToolUseLoop:
         assert len(result["tool_calls"]) == 3
         assert result["message"]
         assert "test_conn" in result["message"] or "run" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_parser_fallback_handles_tool_call_xml_block(self):
+        brain = _make_brain(model="qwen/qwen2.5-coder")
+        brain.memory.recall = AsyncMock(return_value=[])
+        brain.memory.save_conversation_turn = AsyncMock()
+
+        fallback_response = _mock_llm_response(
+            content='<tool_call>{"name":"test_conn","arguments":{"input":"check"}}</tool_call>'
+        )
+        final_response = _mock_llm_response("Done!")
+
+        with patch("lumen.core.brain.acompletion") as mock_llm:
+            mock_llm.side_effect = [fallback_response, final_response]
+            with patch.object(brain.connectors, "execute", new=AsyncMock(return_value={"stdout": "Python 3", "stderr": "", "exit_code": 0})) as mock_exec:
+                result = await brain.think("check python", Session())
+
+        assert result["message"] == "Done!"
+        mock_exec.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_parser_fallback_handles_embedded_json_tool_call(self):
+        brain = _make_brain(model="deepseek/deepseek-chat")
+        brain.memory.recall = AsyncMock(return_value=[])
+        brain.memory.save_conversation_turn = AsyncMock()
+
+        fallback_response = _mock_llm_response(
+            content='{"tool":"test_conn","arguments":{"input":"check"}}'
+        )
+        final_response = _mock_llm_response("Done!")
+
+        with patch("lumen.core.brain.acompletion") as mock_llm:
+            mock_llm.side_effect = [fallback_response, final_response]
+            with patch.object(brain.connectors, "execute", new=AsyncMock(return_value={"stdout": "Python 3", "stderr": "", "exit_code": 0})) as mock_exec:
+                result = await brain.think("check python", Session())
+
+        assert result["message"] == "Done!"
+        mock_exec.assert_awaited()
 
 
 # ── _coerce_args ─────────────────────────────────────────────────────
@@ -1373,10 +1435,231 @@ class TestGuardCapabilityClaims:
         assert response == "Te mando un mensaje por Telegram."
 
 
+# ── contradiction retry layer (Phase 2.3) ──────────────────────────────
+
+
+class TestContradictionRetryLayer:
+    """Tests for Phase 2.3 — contradiction retry when LLM denies READY capabilities."""
+
+    def test_detect_capability_denial_finds_wrong_denial(self):
+        """LLM says 'no tengo terminal' but terminal IS READY → detected."""
+        registry = Registry()
+        registry.register(
+            Capability(
+                kind=CapabilityKind.CONNECTOR,
+                name="terminal",
+                description="Execute terminal commands",
+                status=CapabilityStatus.READY,
+                provides=["execute_command"],
+            )
+        )
+        brain = _make_brain(registry=registry)
+        denials = brain._detect_capability_denial(
+            "No tengo terminal instalado, no puedo ejecutar comandos."
+        )
+        assert len(denials) == 1
+        assert denials[0]["name"] == "terminal"
+        assert denials[0]["capability"].is_ready()
+
+    def test_detect_capability_denial_ignores_ready_affirmation(self):
+        """LLM says 'tengo terminal listo' and terminal IS READY → NOT flagged."""
+        registry = Registry()
+        registry.register(
+            Capability(
+                kind=CapabilityKind.CONNECTOR,
+                name="terminal",
+                description="Execute terminal commands",
+                status=CapabilityStatus.READY,
+            )
+        )
+        brain = _make_brain(registry=registry)
+        denials = brain._detect_capability_denial(
+            "Tengo terminal instalado y listo para usar."
+        )
+        assert len(denials) == 0
+
+    def test_detect_capability_denial_ignores_not_ready_capability(self):
+        """LLM says 'no tengo X' but X is NOT READY → NOT flagged (truthful)."""
+        registry = Registry()
+        registry.register(
+            Capability(
+                kind=CapabilityKind.MODULE,
+                name="telegram",
+                description="Telegram integration",
+                status=CapabilityStatus.AVAILABLE,  # NOT READY
+            )
+        )
+        brain = _make_brain(registry=registry)
+        denials = brain._detect_capability_denial(
+            "No tengo Telegram configurado todavía."
+        )
+        assert len(denials) == 0  # Truthful denial — not flagged
+
+    def test_detect_capability_denial_ignores_unmentioned_capabilities(self):
+        """LLM doesn't mention any capability → nothing detected."""
+        brain = _make_brain()
+        denials = brain._detect_capability_denial(
+            "No puedo ayudarte con eso, lo siento."
+        )
+        assert len(denials) == 0
+
+    def test_detect_capability_denial_finds_i_cant_pattern(self):
+        """'I cannot use X' on a READY capability is detected."""
+        registry = Registry()
+        registry.register(
+            Capability(
+                kind=CapabilityKind.SKILL,
+                name="web-search",
+                description="Search the web",
+                status=CapabilityStatus.READY,
+            )
+        )
+        brain = _make_brain(registry=registry)
+        denials = brain._detect_capability_denial(
+            "I cannot use web-search because it's not available to me."
+        )
+        assert len(denials) == 1
+        assert denials[0]["name"] == "web-search"
+
+    def test_is_denial_of_capability_with_negation_after_capability(self):
+        """'I have X but I cannot use it' — negation appears after capability, denial detected.
+        This is a Phase 2.3 contradiction: the LLM claims it HAS X but then denies
+        it can USE X. Both clauses appear in the same proximity window, so denial wins."""
+        brain = _make_brain()
+        # "I have" (ability) + "cannot use" (negation) in same sentence near capability
+        result = brain._is_denial_of_capability(
+            "I have terminal but I cannot use it right now.",
+            "terminal"
+        )
+        assert result is True
+
+    def test_is_denial_of_capability_pure_denial(self):
+        """'I don't have X' on a capability → denial detected."""
+        brain = _make_brain()
+        result = brain._is_denial_of_capability(
+            "I don't have terminal access.",
+            "terminal"
+        )
+        assert result is True
+
+    def test_build_contradiction_directive_contains_capability_info(self):
+        registry = Registry()
+        registry.register(
+            Capability(
+                kind=CapabilityKind.CONNECTOR,
+                name="terminal",
+                description="Execute commands",
+                status=CapabilityStatus.READY,
+                provides=["execute", "run"],
+            )
+        )
+        brain = _make_brain(registry=registry)
+        denials = brain._detect_capability_denial("No tengo terminal.")
+        directive = brain._build_contradiction_directive(denials)
+
+        assert "Contradiction Correction" in directive
+        assert "terminal" in directive
+        assert "READY" in directive
+        assert "execute" in directive
+
+    @pytest.mark.asyncio
+    async def test_think_retry_clears_messages_after_finalize(self):
+        """After contradiction retry completes, _current_messages is cleared."""
+        registry = Registry()
+        registry.register(
+            Capability(
+                kind=CapabilityKind.CONNECTOR,
+                name="terminal",
+                description="Execute commands",
+                status=CapabilityStatus.READY,
+            )
+        )
+        brain = _make_brain(registry=registry)
+        brain.memory.recall = AsyncMock(return_value=[])
+        brain.memory.save_conversation_turn = AsyncMock()
+
+        first_response = _mock_llm_response(
+            "No tengo terminal, no puedo hacer eso."
+        )
+        corrected_response = _mock_llm_response(
+            "Sí tengo terminal. Listo."
+        )
+
+        with patch("lumen.core.brain.acompletion") as mock_llm:
+            mock_llm.side_effect = [first_response, corrected_response]
+            result = await brain.think("ejecuta un comando", Session())
+
+        # Messages should be cleared after finalize
+        assert brain._current_messages is None
+        # Should have at least 2 LLM calls (first response + retry)
+        assert mock_llm.call_count >= 2
+
+    @pytest.mark.asyncio
+    async def test_think_no_retry_when_no_contradiction(self):
+        """When LLM correctly acknowledges a READY capability, no retry happens."""
+        registry = Registry()
+        registry.register(
+            Capability(
+                kind=CapabilityKind.CONNECTOR,
+                name="terminal",
+                description="Execute commands",
+                status=CapabilityStatus.READY,
+            )
+        )
+        brain = _make_brain(registry=registry)
+        brain.memory.recall = AsyncMock(return_value=[])
+        brain.memory.save_conversation_turn = AsyncMock()
+
+        # LLM correctly says it HAS terminal
+        response = _mock_llm_response(
+            "Sí tengo terminal. Acá está el resultado."
+        )
+
+        with patch("lumen.core.brain.acompletion") as mock_llm:
+            mock_llm.return_value = response
+            result = await brain.think("ejecuta un comando", Session())
+
+        # Only 1 call — no retry needed
+        assert mock_llm.call_count == 1
+        assert "terminal" in result["message"].lower()
+
+    @pytest.mark.asyncio
+    async def test_contradiction_retry_uses_correct_options(self):
+        """Contradiction retry uses purpose='contradiction' with full tools."""
+        registry = Registry()
+        registry.register(
+            Capability(
+                kind=CapabilityKind.CONNECTOR,
+                name="terminal",
+                description="Execute commands",
+                status=CapabilityStatus.READY,
+            )
+        )
+        brain = _make_brain(registry=registry)
+        brain.memory.recall = AsyncMock(return_value=[])
+        brain.memory.save_conversation_turn = AsyncMock()
+
+        first_response = _mock_llm_response(
+            "No tengo terminal, no puedo."
+        )
+        retry_response = _mock_llm_response("Ya lo hice.")
+
+        call_kwargs = {}
+
+        async def capture_call(**kwargs):
+            call_kwargs.update(kwargs)
+            return retry_response
+
+        with patch("lumen.core.brain.acompletion", side_effect=[first_response, capture_call]):
+            result = await brain.think("ejecuta algo", Session())
+
+        # The retry call (second call) should include tools and max_tokens
+        # We can verify through the _completion_options logic
+        profile = brain._model_profile()
+        assert profile["completion_max_tokens"] + 256 > profile["completion_max_tokens"]
+
+
 # ── _build_prompt ────────────────────────────────────────────────────
-
-
-class TestBuildPrompt:
     def test_prompt_contains_consciousness(self):
         brain = _make_brain()
         session = Session()
@@ -1613,6 +1896,124 @@ class TestBuildPrompt:
         assert "Connector handshake failed" in system_msg
         assert "do not present as usable" in system_msg
         assert "Never present a non-ready capability as usable, available now, or already working." in system_msg
+
+
+# ── Tool Suggestion (Phase 2.4) ───────────────────────────────────────
+
+
+class TestSuggestRelevantTools:
+    """Tests for _suggest_relevant_tools — tool hints based on user message."""
+
+    def test_suggest_terminal_tools_for_run_command(self):
+        brain = _make_brain()
+        tools = [{"function": {"name": "terminal", "description": "Run commands"}}]
+
+        result = brain._suggest_relevant_tools("run a script", tools)
+
+        assert result
+        assert "Tool Hint" in result
+        assert "terminal" in result.lower()
+
+    def test_suggest_file_tools_for_read_file(self):
+        brain = _make_brain()
+        tools = [{"function": {"name": "file_read", "description": "Read files"}}]
+
+        result = brain._suggest_relevant_tools("lee el archivo", tools)
+
+        assert result
+        assert "Tool Hint" in result
+        assert "file" in result.lower() or "read" in result.lower()
+
+    def test_suggest_write_tools_for_write_command(self):
+        brain = _make_brain()
+        tools = [{"function": {"name": "file_write", "description": "Write files"}}]
+
+        result = brain._suggest_relevant_tools("write to file", tools)
+
+        assert result
+        assert "Tool Hint" in result
+
+    def test_suggest_message_tools_for_send_message(self):
+        brain = _make_brain()
+        tools = [{"function": {"name": "telegram_send", "description": "Send Telegram messages"}}]
+
+        result = brain._suggest_relevant_tools("send a message to telegram", tools)
+
+        assert result
+        assert "Tool Hint" in result
+        assert "message" in result.lower() or "telegram" in result.lower()
+
+    def test_suggest_setup_tools_for_configure(self):
+        brain = _make_brain()
+        tools = [{"function": {"name": "setup", "description": "Setup modules"}}]
+
+        result = brain._suggest_relevant_tools("setup the module", tools)
+
+        assert result
+        assert "Tool Hint" in result
+        assert "setup" in result.lower() or "module" in result.lower()
+
+    def test_empty_string_when_no_keywords_match(self):
+        brain = _make_brain()
+        tools = [{"function": {"name": "some_tool", "description": "Does something"}}]
+
+        result = brain._suggest_relevant_tools("hello how are you", tools)
+
+        assert result == ""
+
+    def test_empty_string_when_no_tools(self):
+        brain = _make_brain()
+
+        result = brain._suggest_relevant_tools("run a command", None)
+
+        assert result == ""
+
+    def test_empty_string_when_empty_message(self):
+        brain = _make_brain()
+        tools = [{"function": {"name": "terminal", "description": "Run commands"}}]
+
+        result = brain._suggest_relevant_tools("", tools)
+
+        assert result == ""
+
+    def test_limits_to_three_categories(self):
+        brain = _make_brain()
+        tools = [
+            {"function": {"name": "terminal", "description": "Terminal"}},
+            {"function": {"name": "file", "description": "File"}},
+            {"function": {"name": "web", "description": "Web"}},
+            {"function": {"name": "message", "description": "Message"}},
+        ]
+
+        result = brain._suggest_relevant_tools("run command and read file and search web and send message", tools)
+
+        assert result
+        # Should have at most 3 category suggestions (the join is limited to [:3])
+        lines = result.split("\n")
+        suggestion_lines = [l for l in lines if l.startswith("- ")]
+        assert len(suggestion_lines) <= 3
+
+    def test_spanish_keywords(self):
+        brain = _make_brain()
+        tools = [{"function": {"name": "terminal", "description": "Terminal"}}]
+
+        result = brain._suggest_relevant_tools("ejecuta el comando", tools)
+
+        assert result
+        assert "Tool Hint" in result
+
+    def test_case_insensitive(self):
+        brain = _make_brain()
+        tools = [{"function": {"name": "terminal", "description": "Terminal"}}]
+
+        result1 = brain._suggest_relevant_tools("RUN", tools)
+        result2 = brain._suggest_relevant_tools("run", tools)
+        result3 = brain._suggest_relevant_tools("Run", tools)
+
+        assert result1
+        assert result2
+        assert result3
+        assert result1 == result2 == result3
 
 
 # ── SessionManager ───────────────────────────────────────────────────

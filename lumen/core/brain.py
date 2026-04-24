@@ -14,7 +14,10 @@ The brain combines three sources into one prompt:
 import json
 import re
 import unicodedata
+import uuid
 from pathlib import Path
+from typing import Any
+from types import SimpleNamespace
 
 import yaml
 from litellm import acompletion
@@ -71,6 +74,7 @@ class Brain:
         self.flow_action_handler = flow_action_handler
         self.config = config or {}
         self._last_detected_language: str = self.language
+        self._current_messages: list[dict] | None = None  # For contradiction retry
 
     def _resolved_model(self) -> str:
         """Route model through OpenRouter when OpenRouter creds are active."""
@@ -130,6 +134,172 @@ class Brain:
     )
 
     def _is_affirmative_claim(self, response: str, capability_name: str) -> bool:
+        """Check if the response AFFIRMS having a capability (vs just mentioning it)."""
+        text_lower = response.lower()
+        sentences = re.split(r"[.!?]", text_lower)
+        for sentence in sentences:
+            if capability_name not in sentence:
+                continue
+            if re.search(self._NEGATIVE_PATTERNS, sentence):
+                continue
+            if re.search(self._AFFIRMATIVE_PATTERNS, sentence):
+                return True
+        return False
+
+    # Patterns that indicate the model is denying it has a specific capability
+    _DENIAL_PATTERNS = (
+        r"(?:no tengo|I don't have|I cannot|no puedo|I cannot use|"
+        r"I can't|no está|no está disponible|is not available|"
+        r"no dispongo|I don't have access|no tengo acceso|"
+        r"no está instalado|is not installed|not available|not ready)"
+    )
+
+    # Patterns that indicate the model is claiming it can do something.
+    # These are pure affirmative markers without negation handling —
+    # negation is handled separately in _is_denial_of_capability.
+    _ABILITY_PATTERNS = (
+        r"(?:puedo(?!\s+usar)|I can(?!\s+use)|I could|can use|would be able|"
+        r"tengo(?!\s+el?|un)|I have|"
+        r"está disponible(?!\s+para)|is available|listo|ready to|going to)"
+    )
+
+# Negation patterns — if these phrases appear near a capability name,
+    # the response is a denial. Use IGNORECASE flag when matching.
+    _NEGATION_WORDS = (
+        r"(?:no\s+(?:tengo|puedo|esta|tiene|dispongo)|"
+        r"i\s+(?:do['']?n['']?t\s+have|dont\s+have|can['']?t(?:\s+(?:use|have|access|run|execute))?|cant(?:\s+(?:use|have|access|run|execute))?|cannot)|"
+        r"is\s+not\s+(?:available|installed|ready)|"
+        r"no\s+esta\s+(?:disponible|instalado|listo))"
+    )
+
+    # Affirmation words — pure affirmative markers near a capability name.
+    # These indicate the model is claiming it has the capability.
+    _ABILITY_PATTERNS = (
+        r"(?:puedo(?!\s+(?:usar|ejecutar|hacer))|"
+        r"I\s+can(?!\s+(?:use|execute|do|run|have|access))|"
+        r"I\s+could|can\s+use|would\s+be\s+able|"
+        r"tengo(?!\s+(?:el?|un|una)\s)|"
+        r"I\s+have|"
+        r"está\s+disponible(?!\s+para)|"
+        r"is\s+available(?!\s+for)|"
+        r"listo|ready\s+to|going\s+to)"
+    )
+
+    def _detect_capability_denial(self, response: str) -> list[dict]:
+        """Detect when the LLM wrongly denies a capability it actually has READY.
+
+        Returns a list of dicts with the capability name and a truth correction.
+        Only flags denials of capabilities that are actually READY.
+        """
+        denied = self._detect_capability_mentions(response)
+        if not denied:
+            return []
+
+        denials: list[dict] = []
+        for name in denied:
+            cap = self._find_capability(name)
+            # Only flag if the capability IS READY (the contradiction)
+            if cap is not None and cap.is_ready():
+                if self._is_denial_of_capability(response, name):
+                    dn = cap.metadata.get("display_name") or cap.name
+                    denials.append({
+                        "name": name,
+                        "display_name": dn,
+                        "capability": cap,
+                    })
+
+        return denials
+
+    def _is_denial_of_capability(self, response: str, capability_name: str) -> bool:
+        """Check if the response DENIES having a specific capability.
+
+        Uses proximity: if negation phrases ("no tengo", "I don't have")
+        appear near the capability name, the response is a denial.
+        Pure affirmations ("tengo", "I have") cancel the denial only if
+        they appear WITHOUT a nearby negation.
+        """
+        text_lower = response.lower()
+        sentences = re.split(r"[.!?]", text_lower)
+        for sentence in sentences:
+            if capability_name not in sentence:
+                continue
+            name_pos = sentence.find(capability_name)
+            # Build proximity window around the name (±20 chars)
+            start = max(0, name_pos - 20)
+            end = name_pos + len(capability_name) + 20
+            nearby = sentence[start:end]
+
+            has_negation = bool(re.search(self._NEGATION_WORDS, nearby, re.IGNORECASE))
+            has_affirmation = bool(re.search(self._ABILITY_PATTERNS, nearby, re.IGNORECASE))
+
+            # Denial if negation is near, regardless of affirmation.
+            # An affirmation only cancels a denial when it appears in a
+            # SEPARATE clause without negation (the overall sentence check
+            # already handles this by splitting on [.!?]).
+            if has_negation:
+                return True
+        return False
+
+    async def _retry_with_contradiction_evidence(
+        self,
+        messages: list[dict],
+        denials: list[dict],
+        original_response: str,
+        tools: list[dict] | None,
+    ) -> dict:
+        """Retry the LLM with direct evidence about READY capabilities.
+
+        If the LLM denied a READY capability, show it the truth and
+        ask it to reformulate. One retry only — if it persists, correct directly.
+        """
+        directive = self._build_contradiction_directive(denials)
+        retry_messages = messages[:-1] if messages else []  # Remove the wrong response
+        retry_messages.append({
+            "role": "user",
+            "content": (
+                f"{directive}\n\n"
+                f"Your previous response contained a contradiction:\n"
+                f'"{original_response}"\n\n'
+                f"Reformulate your answer acknowledging that you do have "
+                f"the capability mentioned above, and complete the user's request."
+            ),
+        })
+
+        try:
+            options = self._completion_options(purpose="contradiction", tools=tools)
+            response = await acompletion(
+                model=options["model"],
+                messages=retry_messages,
+                tools=options.get("tools"),
+                temperature=options["temperature"],
+                max_tokens=options["max_tokens"],
+            )
+            return response.choices[0].message.content or ""
+        except Exception:
+            return ""
+
+    def _build_contradiction_directive(self, denials: list[dict]) -> str:
+        """Build a directive that shows the LLM its actual READY capabilities."""
+        lines = [
+            "## Contradiction Correction — READ THESE FACTS:",
+            "The capability you just denied is actually READY right now. "
+            "Here is the exact status from your live Registry:",
+        ]
+        for item in denials:
+            cap = item["capability"]
+            dn = item["display_name"]
+            provides = cap.provides[:3] if cap.provides else []
+            provides_str = ", ".join(provides) if provides else "general capability"
+            lines.append(
+                f"- **{dn}**: READY (status={cap.status.value}) "
+                f"→ provides: {provides_str}"
+            )
+
+        lines.append(
+            "\nDo NOT repeat the previous wrong answer. "
+            "Use this tool now and respond correctly to the user."
+        )
+        return "\n".join(lines)
         """Check if the response AFFIRMS having a capability (vs just mentioning it)."""
         import re
         text_lower = response.lower()
@@ -382,8 +552,6 @@ class Brain:
         }
 
         # 4. Build prompt
-        messages = self._build_prompt(context, message, session)
-
         # 5. LLM decides everything — connectors as tools + introspection
         tools = self.connectors.as_tools() or []
 
@@ -534,15 +702,22 @@ class Brain:
             }
         )
 
+        # 4. Build prompt (tools must be built first for Phase 2.4)
+        messages = self._build_prompt(context, message, session, tools)
+
+        # Store messages for contradiction retry (Phase 2.3)
+        self._current_messages = messages[:]
+
         tools = tools if tools else None
 
         try:
+            options = self._completion_options(purpose="main", tools=tools if tools else None)
             response = await acompletion(
-                model=self._resolved_model(),
+                model=options["model"],
                 messages=messages,
-                tools=tools if tools else None,
-                temperature=0.7,
-                max_tokens=1024,
+                tools=options.get("tools"),
+                temperature=options["temperature"],
+                max_tokens=options["max_tokens"],
             )
         except Exception as e:
             return {"message": f"I had trouble thinking: {e}", "tool_calls": []}
@@ -584,11 +759,12 @@ class Brain:
         ]
 
         try:
+            options = self._completion_options(purpose="proactive")
             response = await acompletion(
-                model=self._resolved_model(),
+                model=options["model"],
                 messages=messages,
-                max_tokens=150,
-                temperature=0.7,
+                max_tokens=options["max_tokens"],
+                temperature=options["temperature"],
             )
             content = response.choices[0].message.content or ""
             return content.strip() if content.strip() else None
@@ -1025,8 +1201,38 @@ class Brain:
         }
 
     async def _finalize_turn(self, session: Session, message: str, result: dict) -> dict:
+        original_message = result["message"]
         result["message"] = self._guard_capability_claims(result["message"])
         self._update_pending_setup_offer(session, result)
+
+        # Phase 2.3: Contradiction retry — when LLM denies a READY capability
+        if self._current_messages is not None:
+            denials = self._detect_capability_denial(original_message)
+            if denials:
+                tools = self.connectors.as_tools() or []
+                tools = tools if tools else None
+                corrected = await self._retry_with_contradiction_evidence(
+                    self._current_messages,
+                    denials,
+                    original_message,
+                    tools,
+                )
+                if corrected:
+                    result["message"] = self._guard_capability_claims(corrected)
+                else:
+                    # Fallback: direct correction if retry also failed
+                    corrections = []
+                    for item in denials:
+                        dn = item["display_name"]
+                        corrections.append(
+                            f"{dn} is actually READY and available right now."
+                        )
+                    result["message"] = (
+                        f"{' '.join(corrections)} "
+                        f"{self._guard_capability_claims(original_message)}"
+                    )
+            self._current_messages = None
+
         user_history = result.get("user_message_for_history", message)
 
         session.add_message("user", user_history)
@@ -1260,7 +1466,7 @@ class Brain:
         return value
 
     def _build_prompt(
-        self, context: dict, message: str, session: Session
+        self, context: dict, message: str, session: Session, tools: list[dict] | None = None
     ) -> list[dict]:
         """Assemble the system prompt from Consciousness + Personality + Body.
 
@@ -1310,6 +1516,9 @@ class Brain:
             "16. Prefer concrete execution over speculation. Verify with tools instead of answering from memory when tools are available.",
             "",
             self._tool_enforcement_directive(),
+            "",
+            # Tool hint — Phase 2.4: suggest relevant tools based on user message
+            self._suggest_relevant_tools(message, tools),
             "",
             # 1. CONSCIOUSNESS — the soul (never changes)
             context["consciousness"],
@@ -1415,43 +1624,211 @@ class Brain:
 
         return messages
 
-    def _tool_enforcement_directive(self) -> str:
-        """Return model-aware tool discipline instructions.
+    # Keywords that suggest which tools are most relevant for this turn.
+    # Used by _suggest_relevant_tools to hint to the LLM.
+    _TOOL_RELEVANCE_KEYWORDS = {
+        "terminal": [
+            "ejecuta", "ejecutar", "run", "command", "comando", "terminal",
+            "cmd", "shell", "bash", "powershell", "consola", "console",
+            "script", "python", "node", "npm", "pip", "git",
+        ],
+        "file": [
+            "lee", "leer", "read", "archivo", "file", "carpeta", "folder",
+            "directorio", "directory", "contenido", "content", "lista", "list",
+            "busca", "buscar", "search", "encuentra", "find",
+        ],
+        "write": [
+            "escribe", "escribir", "write", "guarda", "guardar", "save",
+            "crea", "crear", "create", "actualiza", "actualizar", "update",
+            "edita", "editar", "edit", "modifica", "modificar",
+        ],
+        "web": [
+            "busca", "buscar", "search", "google", "navega", "navegar",
+            "web", "internet", "curl", "wget", "http", " scrape", "scraping",
+        ],
+        "message": [
+            "envía", "enviar", "send", "mensaje", "message", "whatsapp",
+            "telegram", "slack", "discord", "email", "correo",
+        ],
+        "setup": [
+            "configura", "configurar", "setup", "install", "instala",
+            "instalar", "prepara", "preparar", "activa", "activar",
+        ],
+    }
 
-        Keep this compact and explicit — enough to steer weaker models without
-        turning Lumen into a brittle prompt framework.
+    # Map relevance categories to likely tool names/connectors
+    _TOOL_CATEGORY_MAP = {
+        "terminal": ["terminal", "shell", "exec"],
+        "file": ["file", "read", "write", "filesystem"],
+        "write": ["file", "write", "save"],
+        "web": ["web", "search", "http", "fetch"],
+        "message": ["message", "send", "telegram", "whatsapp", "slack"],
+        "setup": ["install", "module", "setup"],
+    }
+
+    def _suggest_relevant_tools(
+        self, message: str, tools: list[dict] | None
+    ) -> str:
+        """Suggest relevant tools based on user message keywords.
+
+        Returns a directive hinting which tools are most relevant for this turn,
+        or an empty string if no clear match is found. This is optional guidance —
+        the LLM still decides what to use.
+        """
+        if not tools or not message:
+            return ""
+
+        text_lower = message.lower()
+        matched_categories: list[str] = []
+
+        for category, keywords in self._TOOL_RELEVANCE_KEYWORDS.items():
+            for keyword in keywords:
+                if keyword in text_lower:
+                    matched_categories.append(category)
+                    break
+
+        if not matched_categories:
+            return ""
+
+        # Build suggestion string
+        suggestions: list[str] = []
+        for category in matched_categories[:3]:  # Max 3 categories
+            tool_names = self._TOOL_CATEGORY_MAP.get(category, [])
+            if tool_names:
+                suggestions.append(f"- {category}: check {', '.join(tool_names[:2])}")
+
+        if suggestions:
+            return (
+                "## Tool Hint (optional guidance)\n"
+                "Based on the user's request, these tools seem most relevant:\n"
+                + "\n".join(suggestions) +
+                "\nUse these if they fit the user's request."
+            )
+        return ""
+
+    def _model_profile(self) -> dict[str, Any]:
+        """Lightweight model behavior profile.
+
+        This is intentionally small: enough to steer completion settings and
+        future parser/retry behavior, without hardwiring Lumen to providers.
         """
         model = (self.model or "").lower()
-        base = [
-            "## Tool Execution Discipline",
-            "- Use tools to act; do not only describe tool usage.",
-            "- If a connector/tool is available for the task, prefer it over guessing.",
-            "- After tool results arrive, synthesize the answer clearly for the user.",
-        ]
+        profile = {
+            "family": "generic",
+            "tool_reliability": "medium",
+            "supports_native_tools": True,
+            "requires_parser_fallback": False,
+            "completion_temperature": 0.7,
+            "completion_max_tokens": 1024,
+            "proactive_temperature": 0.7,
+            "proactive_max_tokens": 150,
+            "role_style": "system",
+        }
 
         if any(token in model for token in ["gpt", "openai", "o4", "codex"]):
-            base.extend(
-                [
-                    "- Be persistent with tools: verify, inspect, and execute before saying something is unavailable.",
-                    "- Do not answer operational requests from memory when a tool can verify the real state.",
-                ]
+            profile.update(
+                {
+                    "family": "openai",
+                    "tool_reliability": "high",
+                    "supports_native_tools": True,
+                    "requires_parser_fallback": False,
+                }
             )
         elif any(token in model for token in ["gemini", "gemma"]):
-            base.extend(
-                [
-                    "- Prefer explicit absolute paths and verified arguments when using tools.",
-                    "- Double-check the target capability with tools before refusing.",
-                ]
+            profile.update(
+                {
+                    "family": "gemini",
+                    "tool_reliability": "medium",
+                    "supports_native_tools": True,
+                    "requires_parser_fallback": True,
+                }
             )
-        else:
-            base.extend(
-                [
-                    "- Tool use is mandatory for actions, checks, searches, and execution.",
-                    "- If your first attempt fails, retry with a better tool call or clearer arguments.",
-                ]
+        elif any(token in model for token in ["qwen", "deepseek", "mistral"]):
+            profile.update(
+                {
+                    "family": "openai-compatible",
+                    "tool_reliability": "medium",
+                    "supports_native_tools": True,
+                    "requires_parser_fallback": True,
+                }
+            )
+        return profile
+
+    def _completion_options(self, *, purpose: str, tools: list[dict] | None = None) -> dict[str, Any]:
+        profile = self._model_profile()
+        if purpose == "proactive":
+            return {
+                "model": self._resolved_model(),
+                "messages": None,
+                "max_tokens": profile["proactive_max_tokens"],
+                "temperature": profile["proactive_temperature"],
+            }
+        if purpose == "contradiction":
+            # Retry with full tool access so the LLM can act on corrected info
+            return {
+                "model": self._resolved_model(),
+                "messages": None,
+                "tools": tools,
+                "max_tokens": profile["completion_max_tokens"] + 256,
+                "temperature": profile["completion_temperature"],
+            }
+        return {
+            "model": self._resolved_model(),
+            "messages": None,
+            "tools": tools,
+            "max_tokens": profile["completion_max_tokens"],
+            "temperature": profile["completion_temperature"],
+        }
+
+    def _extract_fallback_tool_calls(self, msg_content: str, tools: list[dict] | None) -> list:
+        """Parse non-standard tool call formats from plain content.
+
+        Supports compact fallback formats like:
+          <tool_call>{"name":"terminal","arguments":{...}}</tool_call>
+          {"tool":"terminal","arguments":{...}}
+        """
+        if not msg_content or not tools:
+            return []
+
+        allowed_names = {tool.get("function", {}).get("name") for tool in tools}
+        allowed_names = {name for name in allowed_names if name}
+        parsed = []
+
+        def _materialize(payload: dict) -> None:
+            name = payload.get("name") or payload.get("tool") or payload.get("function")
+            arguments = payload.get("arguments") or payload.get("args") or {}
+            if not isinstance(name, str) or name not in allowed_names:
+                return
+            if not isinstance(arguments, str):
+                arguments = json.dumps(arguments)
+            parsed.append(
+                SimpleNamespace(
+                    id=f"fallback-{uuid.uuid4()}",
+                    function=SimpleNamespace(name=name, arguments=arguments),
+                )
             )
 
-        return "\n".join(base)
+        for match in re.finditer(r"<tool_call>(.*?)</tool_call>", msg_content, re.DOTALL):
+            try:
+                payload = json.loads(match.group(1).strip())
+                if isinstance(payload, dict):
+                    _materialize(payload)
+            except Exception:
+                pass
+
+        if parsed:
+            return parsed
+
+        stripped = msg_content.strip()
+        if stripped.startswith("{") and stripped.endswith("}"):
+            try:
+                payload = json.loads(stripped)
+                if isinstance(payload, dict):
+                    _materialize(payload)
+            except Exception:
+                pass
+
+        return parsed
 
     @staticmethod
     def _coerce_args(params: dict, tool_name: str, tools: list[dict] | None) -> dict:
@@ -1492,6 +1869,44 @@ class Brain:
             coerced[key] = value
         return coerced
 
+    def _tool_enforcement_directive(self) -> str:
+        """Return model-aware tool discipline instructions.
+
+        Keep this compact and explicit — enough to steer weaker models without
+        turning Lumen into a brittle prompt framework.
+        """
+        model = (self.model or "").lower()
+        base = [
+            "## Tool Execution Discipline",
+            "- Use tools to act; do not only describe tool usage.",
+            "- If a connector/tool is available for the task, prefer it over guessing.",
+            "- After tool results arrive, synthesize the answer clearly for the user.",
+        ]
+
+        if any(token in model for token in ["gpt", "openai", "o4", "codex"]):
+            base.extend(
+                [
+                    "- Be persistent with tools: verify, inspect, and execute before saying something is unavailable.",
+                    "- Do not answer operational requests from memory when a tool can verify the real state.",
+                ]
+            )
+        elif any(token in model for token in ["gemini", "gemma"]):
+            base.extend(
+                [
+                    "- Prefer explicit absolute paths and verified arguments when using tools.",
+                    "- Double-check the target capability with tools before refusing.",
+                ]
+            )
+        else:
+            base.extend(
+                [
+                    "- Tool use is mandatory for actions, checks, searches, and execution.",
+                    "- If your first attempt fails, retry with a better tool call or clearer arguments.",
+                ]
+            )
+
+        return "\n".join(base)
+
     async def _tool_use_loop(
         self,
         response,
@@ -1519,8 +1934,12 @@ class Brain:
             if msg.content:
                 partial_text = msg.content
 
+            tool_calls = msg.tool_calls
+            if not tool_calls and self._model_profile().get("requires_parser_fallback"):
+                tool_calls = self._extract_fallback_tool_calls(msg.content or "", tools)
+
             # No tool calls — we have the final text response
-            if not msg.tool_calls:
+            if not tool_calls:
                 final_message = msg.content or ""
                 if not final_message and all_tool_calls:
                     recovered = await self._retry_final_response_without_tools(messages)
@@ -1534,7 +1953,7 @@ class Brain:
             # First, add the assistant's message (with tool calls) to context
             messages.append(msg.model_dump())
 
-            for tool_call in msg.tool_calls:
+            for tool_call in tool_calls:
                 func = tool_call.function
                 try:
                     # Introspection tools (neo__*) are handled by the brain
@@ -1604,12 +2023,13 @@ class Brain:
 
             # Send tool results back to LLM for final response
             try:
+                options = self._completion_options(purpose="main", tools=tools)
                 response = await acompletion(
-                    model=self._resolved_model(),
+                    model=options["model"],
                     messages=messages,
-                    tools=tools,
-                    temperature=0.7,
-                    max_tokens=1024,
+                    tools=options.get("tools"),
+                    temperature=options["temperature"],
+                    max_tokens=options["max_tokens"],
                 )
             except Exception as e:
                 return {
@@ -1627,12 +2047,13 @@ class Brain:
     async def _retry_final_response_without_tools(self, messages: list[dict]) -> str:
         """Ask the model for one last synthesis pass without tools."""
         try:
+            options = self._completion_options(purpose="main", tools=None)
             response = await acompletion(
-                model=self._resolved_model(),
+                model=options["model"],
                 messages=messages,
                 tools=None,
-                temperature=0.7,
-                max_tokens=1024,
+                temperature=options["temperature"],
+                max_tokens=options["max_tokens"],
             )
             return response.choices[0].message.content or ""
         except Exception:
