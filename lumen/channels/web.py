@@ -7,6 +7,7 @@ Routing logic:
 """
 
 import base64
+import asyncio
 import hashlib
 import hmac
 import json
@@ -63,6 +64,7 @@ _access_mode = "run"
 _awareness = None  # CapabilityAwareness — set during bootstrap
 _active_websockets: set[WebSocket] = set()  # Track connected clients
 _watchers = None  # FilePoller — started in lifespan
+_reload_ipc_task = None
 
 LUMEN_DIR = Path.home() / ".lumen"
 CONFIG_PATH = LUMEN_DIR / "config.yaml"
@@ -81,6 +83,8 @@ DEFAULT_QUICK_PERSONALITY = "x-lumen-personal"
 AUTH_COOKIE_NAME = "lumen_owner"
 SETUP_COOKIE_NAME = "lumen_setup"
 COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30
+RELOAD_REQUEST_FILE = ".lumen-reload-request.json"
+RELOAD_ACK_FILE = ".lumen-reload-ack.json"
 LEGACY_ENTRY_PATH_MAP = {
     "uso_personal": "rapido",
     "negocio": "elegir_personality",
@@ -134,6 +138,39 @@ def _start_inbox_consumer():
     _inbox_consumer_task = loop.create_task(
         inbox.start_consumer(_brain, session_manager)
     )
+
+
+async def _perform_runtime_reload() -> None:
+    global _config
+    _config = rehydrate_runtime_config(_config, lumen_dir=LUMEN_DIR)
+    if getattr(_brain, "config", None) is not None:
+        _brain.config = _config
+    await sync_runtime_modules(_brain, config=_config, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR)
+    refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR, active_channels=["web"])
+    reload_runtime_personality_surface(_brain, config=_config, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR)
+
+
+async def _reload_ipc_loop(interval: float = 1.0):
+    request_path = LUMEN_DIR / RELOAD_REQUEST_FILE
+    ack_path = LUMEN_DIR / RELOAD_ACK_FILE
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            if not request_path.exists() or not _brain:
+                continue
+            payload = json.loads(request_path.read_text(encoding="utf-8"))
+            request_id = payload.get("id")
+            try:
+                await _perform_runtime_reload()
+                ack = {"id": request_id, "status": "ok", "ts": time()}
+            except Exception as exc:
+                ack = {"id": request_id, "status": "error", "error": str(exc), "ts": time()}
+            ack_path.write_text(json.dumps(ack), encoding="utf-8")
+            request_path.unlink(missing_ok=True)
+        except asyncio.CancelledError:
+            break
+        except Exception:
+            pass
 
 
 async def _handle_flow_action(action: str, slots: dict, *, session=None) -> dict:
@@ -1086,7 +1123,7 @@ def _exchange_openrouter_code(code: str, code_verifier: str) -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize async resources on startup."""
-    global _watchers, _inbox_consumer_task
+    global _watchers, _inbox_consumer_task, _reload_ipc_task
     if _brain:
         await _brain.memory.init()
 
@@ -1130,11 +1167,21 @@ async def lifespan(app: FastAPI):
             _watchers = FilePoller(_brain.registry, watched, on_change=_on_file_change)
             await _watchers.start(interval=120)
 
+    if _brain and _reload_ipc_task is None:
+        _reload_ipc_task = asyncio.create_task(_reload_ipc_loop())
+
     yield
 
     # Cleanup
     if _watchers:
         await _watchers.stop()
+    if _reload_ipc_task is not None:
+        _reload_ipc_task.cancel()
+        try:
+            await _reload_ipc_task
+        except asyncio.CancelledError:
+            pass
+        _reload_ipc_task = None
     if _inbox_consumer_task is not None:
         _inbox_consumer_task.cancel()
     if _brain:
@@ -2014,14 +2061,7 @@ async def api_reload(request: Request):
         return JSONResponse(status_code=503, content={"error": "Lumen not ready"})
 
     try:
-        _config = rehydrate_runtime_config(_config, lumen_dir=LUMEN_DIR)
-        if getattr(_brain, "config", None) is not None:
-            _brain.config = _config
-        await sync_runtime_modules(
-            _brain, config=_config, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR
-        )
-        refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR, active_channels=["web"])
-        reload_runtime_personality_surface(_brain, config=_config, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR)
+        await _perform_runtime_reload()
 
         # Count capabilities in the refreshed registry
         module_count = 0

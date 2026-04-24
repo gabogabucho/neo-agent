@@ -266,6 +266,7 @@ class ReloadCLICommandTests(unittest.TestCase):
         # bootstrap_runtime should have been called
         mock_bootstrap.assert_called_once()
 
+    @patch("lumen.cli.main._request_live_reload", return_value=False)
     @patch("lumen.cli.main.reload_runtime_personality_surface")
     @patch("lumen.cli.main.sync_runtime_modules")
     @patch("lumen.cli.main.refresh_runtime_registry")
@@ -280,6 +281,7 @@ class ReloadCLICommandTests(unittest.TestCase):
         mock_refresh,
         mock_sync,
         mock_reload_surface,
+        mock_live_reload,
     ):
         """reload must use hydrated runtime.config, not stale pre-bootstrap config."""
         mock_is_configured.return_value = True
@@ -309,6 +311,49 @@ class ReloadCLICommandTests(unittest.TestCase):
         assert mock_sync.call_args.kwargs["config"] == mock_runtime.config
         assert mock_reload_surface.call_args.kwargs["config"] == mock_runtime.config
         assert mock_runtime.brain.config == mock_runtime.config
+
+    @patch("lumen.cli.main._request_live_reload", return_value=True)
+    @patch("lumen.cli.main.bootstrap_runtime")
+    @patch("lumen.cli.main._load_persisted_config")
+    @patch("lumen.cli.main._is_runtime_configured")
+    def test_reload_prefers_live_runtime_ipc(
+        self, mock_is_configured, mock_load_config, mock_bootstrap, mock_live_reload
+    ):
+        mock_is_configured.return_value = True
+        mock_load_config.return_value = {"model": "test"}
+
+        from typer.testing import CliRunner
+        from lumen.cli.main import app
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["reload"])
+
+        assert result.exit_code == 0
+        mock_live_reload.assert_called_once()
+        mock_bootstrap.assert_not_called()
+
+    def test_request_live_reload_acknowledges_request(self):
+        from lumen.cli.main import _request_live_reload, RELOAD_ACK_FILE
+        import json, threading, time
+
+        with tempfile.TemporaryDirectory() as td:
+            lumen_dir = Path(td)
+
+            def write_ack():
+                time.sleep(0.5)
+                request_path = lumen_dir / ".lumen-reload-request.json"
+                payload = json.loads(request_path.read_text(encoding="utf-8"))
+                (lumen_dir / RELOAD_ACK_FILE).write_text(
+                    json.dumps({"id": payload["id"], "status": "ok"}),
+                    encoding="utf-8",
+                )
+
+            thread = threading.Thread(target=write_ack)
+            thread.start()
+            try:
+                assert _request_live_reload(lumen_dir, timeout=3.0) is True
+            finally:
+                thread.join()
 
 
 class ReloadConfigHydrationTests(unittest.TestCase):
@@ -360,6 +405,28 @@ class ReloadConfigHydrationTests(unittest.TestCase):
         assert mock_sync.call_args.kwargs["config"] == web._config
         assert mock_reload_surface.call_args.kwargs["config"] == web._config
         assert web._brain.config == web._config
+
+    @patch("lumen.channels.web._perform_runtime_reload", new_callable=AsyncMock)
+    def test_reload_ipc_loop_processes_request_file(self, mock_reload):
+        import asyncio, json
+
+        request_path = web.LUMEN_DIR / ".lumen-reload-request.json"
+        ack_path = web.LUMEN_DIR / ".lumen-reload-ack.json"
+        request_path.write_text(json.dumps({"id": "abc"}), encoding="utf-8")
+
+        async def run_once():
+            task = asyncio.create_task(web._reload_ipc_loop(interval=0.01))
+            await asyncio.sleep(0.05)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        asyncio.run(run_once())
+
+        mock_reload.assert_called()
+        assert ack_path.exists()
 
 
 if __name__ == "__main__":

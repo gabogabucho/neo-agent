@@ -1,8 +1,11 @@
 """Lumen CLI — the bootstrapper, not the experience."""
 
 import asyncio
+import json
 import os
 import sys
+import time
+import uuid
 import webbrowser
 from pathlib import Path
 
@@ -53,6 +56,8 @@ app = typer.Typer(
     rich_markup_mode="rich",
 )
 console = Console()
+RELOAD_REQUEST_FILE = ".lumen-reload-request.json"
+RELOAD_ACK_FILE = ".lumen-reload-ack.json"
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -64,6 +69,27 @@ def _load_persisted_config(config_path: Path | None = None) -> dict:
         return {}
     loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return loaded if isinstance(loaded, dict) else {}
+
+
+def _request_live_reload(lumen_dir: Path, timeout: float = 15.0) -> bool:
+    """Ask a live Lumen process for this instance to reload via IPC file."""
+    request_id = str(uuid.uuid4())
+    request_path = lumen_dir / RELOAD_REQUEST_FILE
+    ack_path = lumen_dir / RELOAD_ACK_FILE
+    lumen_dir.mkdir(parents=True, exist_ok=True)
+    request_path.write_text(json.dumps({"id": request_id, "ts": time.time()}), encoding="utf-8")
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if ack_path.exists():
+            try:
+                payload = json.loads(ack_path.read_text(encoding="utf-8"))
+                if payload.get("id") == request_id and payload.get("status") == "ok":
+                    return True
+            except Exception:
+                pass
+        time.sleep(0.25)
+    return False
 
 
 def _is_runtime_configured(config: dict | None = None) -> bool:
@@ -636,6 +662,11 @@ def reload(
         raise typer.Exit(1)
 
     console.print("[dim]Reloading runtime...[/dim]")
+
+    # First try to reload a live running instance via IPC.
+    if _request_live_reload(lumen_dir, timeout=5.0):
+        console.print("[green]✓[/green] Live runtime reloaded")
+        return
 
     try:
         runtime = asyncio.run(
