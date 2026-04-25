@@ -1823,6 +1823,26 @@ class Brain:
         if parsed:
             return parsed
 
+        # DeepSeek DSML tool_calls envelope
+        # <｜DSML｜tool_calls>[{"name":"tool__action","arguments":{...}}]</｜DSML｜tool_calls>
+        for match in re.finditer(
+            r"<｜DSML｜tool_calls>(.*?)</｜DSML｜tool_calls>", msg_content, re.DOTALL
+        ):
+            try:
+                raw = match.group(1).strip()
+                if raw.startswith("["):
+                    payloads = json.loads(raw)
+                else:
+                    payloads = [json.loads(raw)]
+                for payload in payloads:
+                    if isinstance(payload, dict):
+                        _materialize(payload)
+            except Exception:
+                pass
+
+        if parsed:
+            return parsed
+
         # DeepSeek DSML format
         # <｜DSML｜invoke name="tool__action">
         #   <｜DSML｜parameter name="command" string="true">value</｜DSML｜parameter>
@@ -1908,6 +1928,7 @@ class Brain:
 
         markers = (
             "<tool_call>",
+            "<｜DSML｜tool_calls>",
             "<｜DSML｜invoke ",
             '<invoke name="',
             "[TOOL_CALLS]",
@@ -1939,33 +1960,119 @@ class Brain:
 
         return name if isinstance(name, str) and name.strip() else None
 
+    @staticmethod
+    def _tool_call_arguments(tool_call: Any) -> Any:
+        """Return tool arguments from native or parsed tool call shapes."""
+        if not tool_call:
+            return None
+
+        function = getattr(tool_call, "function", None)
+        if function is None and isinstance(tool_call, dict):
+            function = tool_call.get("function")
+
+        if isinstance(function, dict):
+            return function.get("arguments")
+        return getattr(function, "arguments", None)
+
+    @staticmethod
+    def _allowed_tool_names(tools: list[dict] | None) -> set[str]:
+        return {
+            tool.get("function", {}).get("name")
+            for tool in (tools or [])
+            if tool.get("function", {}).get("name")
+        }
+
     @classmethod
-    def _has_usable_tool_calls(cls, tool_calls: list[Any] | None) -> bool:
-        """Treat empty-ish native tool payloads as missing tool calls."""
-        return any(cls._tool_call_name(tool_call) for tool_call in (tool_calls or []))
+    def _is_usable_tool_arguments(cls, arguments: Any) -> bool:
+        """Accept dict args or JSON-object strings, reject empty/malformed payloads."""
+        if isinstance(arguments, dict):
+            return True
+        if not isinstance(arguments, str) or not arguments.strip():
+            return False
+        try:
+            parsed = json.loads(arguments)
+        except Exception:
+            return False
+        return isinstance(parsed, dict)
+
+    @classmethod
+    def _is_valid_tool_call(
+        cls,
+        tool_call: Any,
+        *,
+        allowed_names: set[str],
+        strict_allowed_names: bool,
+    ) -> bool:
+        name = cls._tool_call_name(tool_call)
+        if not name:
+            return False
+        if strict_allowed_names and name not in allowed_names:
+            return False
+        return cls._is_usable_tool_arguments(cls._tool_call_arguments(tool_call))
+
+    @classmethod
+    def _has_usable_tool_calls(cls, tool_calls: list[Any] | None, tools: list[dict] | None = None) -> bool:
+        """Treat empty-ish or malformed tool payloads as missing tool calls."""
+        if not tool_calls:
+            return False
+        allowed_names = cls._allowed_tool_names(tools)
+        strict_allowed_names = bool(allowed_names)
+        return all(
+            cls._is_valid_tool_call(
+                tool_call,
+                allowed_names=allowed_names,
+                strict_allowed_names=strict_allowed_names,
+            )
+            for tool_call in tool_calls
+        )
 
     def _resolve_tool_calls(self, msg, tools: list[dict] | None) -> list[Any] | None:
         """Prefer usable native tool calls, with guarded fallback parsing."""
         native_tool_calls = getattr(msg, "tool_calls", None)
-        native_usable = self._has_usable_tool_calls(native_tool_calls)
+        native_count = len(native_tool_calls or [])
+        native_usable = self._has_usable_tool_calls(native_tool_calls, tools)
         content = getattr(msg, "content", "") or ""
+        serialized_detected = self._has_serialized_tool_call_shape(content)
 
-        if not self._has_serialized_tool_call_shape(content):
-            return native_tool_calls
+        if not serialized_detected:
+            if native_count:
+                logger.warning(
+                    "tool resolution: serialized_detected=%s native_count=%s parsed_count=%s chosen=%s",
+                    serialized_detected,
+                    native_count,
+                    0,
+                    "native" if native_usable else "none",
+                )
+            return native_tool_calls if native_usable else None
 
-        logger.debug("serialized tool calls detected in content")
         parsed_tool_calls = self._extract_fallback_tool_calls(content, tools)
+        parsed_count = len(parsed_tool_calls)
 
         if native_usable:
-            if parsed_tool_calls:
-                logger.debug("native usable tool calls kept over parsed fallback")
+            logger.warning(
+                "tool resolution: serialized_detected=%s native_count=%s parsed_count=%s chosen=native",
+                serialized_detected,
+                native_count,
+                parsed_count,
+            )
             return native_tool_calls
 
-        if parsed_tool_calls:
-            logger.debug("native tool calls unusable, using fallback parser")
+        if self._has_usable_tool_calls(parsed_tool_calls, tools):
+            logger.warning(
+                "tool resolution: serialized_detected=%s native_count=%s parsed_count=%s chosen=parsed",
+                serialized_detected,
+                native_count,
+                parsed_count,
+            )
             return parsed_tool_calls
 
-        return native_tool_calls
+        logger.warning(
+            "tool resolution: serialized_detected=%s native_count=%s parsed_count=%s chosen=none",
+            serialized_detected,
+            native_count,
+            parsed_count,
+        )
+        return None
 
     @staticmethod
     def _coerce_args(params: dict, tool_name: str, tools: list[dict] | None) -> dict:

@@ -135,6 +135,19 @@ def _mock_tool_call(name, arguments="{}"):
     return tc
 
 
+def _test_tools(*names):
+    """Create minimal tool schemas for validation tests."""
+    return [
+        {
+            "function": {
+                "name": name,
+                "parameters": {"type": "object", "properties": {}},
+            }
+        }
+        for name in names
+    ]
+
+
 # ── think() happy path ───────────────────────────────────────────────
 
 
@@ -325,7 +338,7 @@ class TestToolUseLoop:
 
         parsed_tool_call = _mock_tool_call("test_conn", '{"input": "parsed"}')
         with patch.object(brain, "_extract_fallback_tool_calls", return_value=[parsed_tool_call]) as mock_parse:
-            resolved = brain._resolve_tool_calls(msg, tools=[])
+            resolved = brain._resolve_tool_calls(msg, tools=_test_tools("test_conn"))
 
         assert resolved == [parsed_tool_call]
         mock_parse.assert_called_once()
@@ -340,10 +353,39 @@ class TestToolUseLoop:
         msg.tool_calls = [native_tool_call]
 
         with patch.object(brain, "_extract_fallback_tool_calls", return_value=[parsed_tool_call]) as mock_parse:
-            resolved = brain._resolve_tool_calls(msg, tools=[])
+            resolved = brain._resolve_tool_calls(msg, tools=_test_tools("test_conn"))
 
         assert resolved == [native_tool_call]
         mock_parse.assert_called_once()
+
+    def test_serialized_shape_detects_dsml_tool_calls_envelope(self):
+        content = '<｜DSML｜tool_calls>[{"name":"test_conn","arguments":{"input":"check"}}]</｜DSML｜tool_calls>'
+
+        assert Brain._has_serialized_tool_call_shape(content) is True
+
+    def test_resolve_tool_calls_uses_fallback_when_native_name_not_allowed(self):
+        brain = _make_brain()
+        msg = MagicMock()
+        msg.content = '<｜DSML｜tool_calls>[{"name":"test_conn","arguments":{"input":"parsed"}}]</｜DSML｜tool_calls>'
+        msg.tool_calls = [_mock_tool_call("wrong_tool", '{"input": "native"}')]
+
+        parsed_tool_call = _mock_tool_call("test_conn", '{"input": "parsed"}')
+        with patch.object(brain, "_extract_fallback_tool_calls", return_value=[parsed_tool_call]):
+            resolved = brain._resolve_tool_calls(msg, tools=_test_tools("test_conn"))
+
+        assert resolved == [parsed_tool_call]
+
+    def test_resolve_tool_calls_uses_fallback_when_native_arguments_are_malformed(self):
+        brain = _make_brain()
+        msg = MagicMock()
+        msg.content = '<｜DSML｜tool_calls>[{"name":"test_conn","arguments":{"input":"parsed"}}]</｜DSML｜tool_calls>'
+        msg.tool_calls = [_mock_tool_call("test_conn", '{bad json')]
+
+        parsed_tool_call = _mock_tool_call("test_conn", '{"input": "parsed"}')
+        with patch.object(brain, "_extract_fallback_tool_calls", return_value=[parsed_tool_call]):
+            resolved = brain._resolve_tool_calls(msg, tools=_test_tools("test_conn"))
+
+        assert resolved == [parsed_tool_call]
 
     @pytest.mark.asyncio
     async def test_single_tool_call_executed(self):
@@ -572,6 +614,28 @@ class TestToolUseLoop:
 
         assert result["message"] == "Done!"
         mock_exec.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_parser_fallback_handles_dsml_tool_calls_envelope(self):
+        brain = _make_brain(model="deepseek/deepseek-chat")
+        brain.memory.recall = AsyncMock(return_value=[])
+        brain.memory.save_conversation_turn = AsyncMock()
+
+        dsml_content = (
+            '<｜DSML｜tool_calls>'
+            '[{"name":"test_conn","arguments":{"input":"check"}}]'
+            '</｜DSML｜tool_calls>'
+        )
+        fallback_response = _mock_llm_response(content=dsml_content)
+        final_response = _mock_llm_response("Done!")
+
+        with patch("lumen.core.brain.acompletion") as mock_llm:
+            mock_llm.side_effect = [fallback_response, final_response]
+            with patch.object(brain.connectors, "execute", new=AsyncMock(return_value={"stdout": "ok", "stderr": "", "exit_code": 0})) as mock_exec:
+                result = await brain.think("check python", Session())
+
+        assert result["message"] == "Done!"
+        mock_exec.assert_awaited_once_with("test_conn", "run", {"input": "check"})
 
     @pytest.mark.asyncio
     async def test_parser_fallback_recovers_when_native_tool_calls_are_emptyish(self):
