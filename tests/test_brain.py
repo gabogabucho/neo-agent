@@ -753,6 +753,33 @@ class TestToolUseLoop:
         assert "<|DSML|" not in result["message"]
         assert "invoke" not in result["message"]
 
+    def test_safe_extract_content_sanitises_dsml(self):
+        brain = _make_brain()
+        response = _mock_llm_response(
+            content='<|DSML|tool_calls>[{"name":"x","arguments":{}}]</|DSML|tool_calls>'
+        )
+        result = brain._safe_extract_content(response)
+        assert "DSML" not in result
+        assert result == ""
+
+    def test_safe_extract_content_passes_clean_text(self):
+        brain = _make_brain()
+        response = _mock_llm_response(content="Hello, world!")
+        result = brain._safe_extract_content(response)
+        assert result == "Hello, world!"
+
+    @pytest.mark.asyncio
+    async def test_retry_final_response_sanitises_dsml(self):
+        """_retry_final_response_without_tools must never leak raw tool markup."""
+        brain = _make_brain()
+        dsml_response = _mock_llm_response(
+            content='<|DSML|invoke name="x"><|DSML|parameter name="a">b</|DSML|parameter></|DSML|invoke>'
+        )
+        with patch("lumen.core.brain.acompletion", return_value=dsml_response):
+            result = await brain._retry_final_response_without_tools([])
+        assert "<|DSML|" not in result
+        assert "invoke" not in result
+
 
 # ---- _coerce_args ------------------------------------------------------------
 

@@ -278,7 +278,7 @@ class Brain:
                 temperature=options["temperature"],
                 max_tokens=options["max_tokens"],
             )
-            return response.choices[0].message.content or ""
+            return self._safe_extract_content(response)
         except Exception:
             return ""
 
@@ -770,7 +770,7 @@ class Brain:
                 max_tokens=options["max_tokens"],
                 temperature=options["temperature"],
             )
-            content = response.choices[0].message.content or ""
+            content = self._safe_extract_content(response)
             return content.strip() if content.strip() else None
         except Exception:
             return None
@@ -2195,6 +2195,25 @@ class Brain:
         )
         return content.strip()
 
+    def _safe_extract_content(self, response) -> str:
+        """Extract assistant content from a response, sanitising raw tool markup.
+
+        This is the single source of truth for every code path that reads
+        ``response.choices[0].message.content``.  It guarantees that raw
+        DSML / XML / [TOOL_CALLS] blocks never leak to the user.
+        """
+        content = ""
+        try:
+            content = response.choices[0].message.content or ""
+        except Exception:
+            pass
+        if self._has_serialized_tool_call_shape(content):
+            logger.warning(
+                "_safe_extract_content: serialized tool shape detected — sanitising"
+            )
+            content = self._sanitize_raw_tool_content(content)
+        return content
+
     async def _tool_use_loop(
         self,
         response,
@@ -2338,7 +2357,7 @@ class Brain:
                 }
 
         # Max iterations reached — return what we have
-        final_msg = response.choices[0].message.content or ""
+        final_msg = self._safe_extract_content(response)
         if not final_msg and all_tool_calls:
             recovered = await self._retry_final_response_without_tools(messages)
             final_msg = recovered or partial_text or self._summarize_tool_results(all_tool_calls)
@@ -2355,7 +2374,7 @@ class Brain:
                 temperature=options["temperature"],
                 max_tokens=options["max_tokens"],
             )
-            return response.choices[0].message.content or ""
+            return self._safe_extract_content(response)
         except Exception:
             return ""
 
