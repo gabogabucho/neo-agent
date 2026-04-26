@@ -1825,8 +1825,9 @@ class Brain:
 
         # DeepSeek DSML tool_calls envelope
         # <｜DSML｜tool_calls>[{"name":"tool__action","arguments":{...}}]</｜DSML｜tool_calls>
+        # Also accepts <|DSML|tool_calls> with ASCII pipe (U+007C).
         for match in re.finditer(
-            r"<｜DSML｜tool_calls>(.*?)</｜DSML｜tool_calls>", msg_content, re.DOTALL
+            r"<[｜|]DSML[｜|]tool_calls>(.*?)</[｜|]DSML[｜|]tool_calls>", msg_content, re.DOTALL
         ):
             try:
                 raw = match.group(1).strip()
@@ -1847,14 +1848,15 @@ class Brain:
         # <｜DSML｜invoke name="tool__action">
         #   <｜DSML｜parameter name="command" string="true">value</｜DSML｜parameter>
         # </｜DSML｜invoke>
-        dsml_pattern = r'<｜DSML｜invoke name="([^"]+)">(.*?)</｜DSML｜invoke>'
+        # Also accepts <|DSML|...> with ASCII pipe (U+007C).
+        dsml_pattern = r'<[｜|]DSML[｜|]invoke name="([^"]+)">(.*?)</[｜|]DSML[｜|]invoke>'
         for match in re.finditer(dsml_pattern, msg_content, re.DOTALL):
             try:
                 name = match.group(1)
                 params_block = match.group(2)
                 arguments = {}
                 for param_match in re.finditer(
-                    r'<｜DSML｜parameter name="([^"]+)"[^>]*>(.*?)</｜DSML｜parameter>',
+                    r'<[｜|]DSML[｜|]parameter name="([^"]+)"[^>]*>(.*?)</[｜|]DSML[｜|]parameter>',
                     params_block,
                     re.DOTALL,
                 ):
@@ -1929,7 +1931,9 @@ class Brain:
         markers = (
             "<tool_call>",
             "<｜DSML｜tool_calls>",
+            "<|DSML|tool_calls>",
             "<｜DSML｜invoke ",
+            "<|DSML|invoke ",
             '<invoke name="',
             "[TOOL_CALLS]",
         )
@@ -2151,6 +2155,46 @@ class Brain:
 
         return "\n".join(base)
 
+    @staticmethod
+    def _sanitize_raw_tool_content(content: str) -> str:
+        """Strip un-parsed tool-call XML blocks so they never leak to the user.
+
+        This is a last-resort safety net.  If the fallback parser fails to
+        extract tool calls from a response that clearly contains them, we
+        remove the raw markup rather than return it verbatim.
+        """
+        if not content:
+            return content
+        # DSML (Unicode fullwidth or ASCII pipe)
+        content = re.sub(
+            r"<[｜|]DSML[｜|]tool_calls>.*?</[｜|]DSML[｜|]tool_calls>",
+            "",
+            content,
+            flags=re.DOTALL,
+        )
+        content = re.sub(
+            r"<[｜|]DSML[｜|]invoke\b[^>]*>.*?</[｜|]DSML[｜|]invoke>",
+            "",
+            content,
+            flags=re.DOTALL,
+        )
+        # Generic XML tags that look like tool calls
+        for tag in ("tool_call", "tool_calls", "function_call", "function_calls"):
+            content = re.sub(
+                rf"<{tag}\b[^>]*>.*?</{tag}>",
+                "",
+                content,
+                flags=re.DOTALL | re.IGNORECASE,
+            )
+        # Mistral/Qwen [TOOL_CALLS]…[/TOOL_CALLS]
+        content = re.sub(
+            r"\[TOOL_CALLS\].*?\[/TOOL_CALLS\]",
+            "",
+            content,
+            flags=re.DOTALL,
+        )
+        return content.strip()
+
     async def _tool_use_loop(
         self,
         response,
@@ -2178,11 +2222,25 @@ class Brain:
             if msg.content:
                 partial_text = msg.content
 
+            logger.warning(
+                "tool_use_loop: content_length=%s native_tool_calls=%s",
+                len(msg.content or ""),
+                len(getattr(msg, "tool_calls", None) or []),
+            )
+
             tool_calls = self._resolve_tool_calls(msg, tools)
 
             # No tool calls — we have the final text response
             if not tool_calls:
                 final_message = msg.content or ""
+                # Emergency sanitisation: if the content looks like it
+                # contains tool calls but we failed to parse them, strip
+                # the raw markup so the user never sees it.
+                if self._has_serialized_tool_call_shape(final_message):
+                    logger.warning(
+                        "tool_use_loop: serialized shape detected but no tool calls resolved — sanitising content"
+                    )
+                    final_message = self._sanitize_raw_tool_content(final_message)
                 if not final_message and all_tool_calls:
                     recovered = await self._retry_final_response_without_tools(messages)
                     final_message = recovered or partial_text or self._summarize_tool_results(all_tool_calls)

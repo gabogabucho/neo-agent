@@ -686,6 +686,73 @@ class TestToolUseLoop:
         assert result["message"] == "Done!"
         mock_exec.assert_awaited_once_with("test_conn", "run", {"input": "native"})
 
+    @pytest.mark.asyncio
+    async def test_parser_fallback_handles_dsml_ascii_pipe(self):
+        """DeepSeek sometimes returns <|DSML|...> with ASCII pipe (U+007C)."""
+        brain = _make_brain(model="deepseek/deepseek-chat")
+        brain.memory.recall = AsyncMock(return_value=[])
+        brain.memory.save_conversation_turn = AsyncMock()
+
+        dsml_content = (
+            '<|DSML|tool_calls>'
+            '[{"name":"test_conn","arguments":{"input":"check"}}]'
+            '</|DSML|tool_calls>'
+        )
+        fallback_response = _mock_llm_response(content=dsml_content)
+        final_response = _mock_llm_response("Done!")
+
+        with patch("lumen.core.brain.acompletion") as mock_llm:
+            mock_llm.side_effect = [fallback_response, final_response]
+            with patch.object(brain.connectors, "execute", new=AsyncMock(return_value={"stdout": "ok", "stderr": "", "exit_code": 0})) as mock_exec:
+                result = await brain.think("check python", Session())
+
+        assert result["message"] == "Done!"
+        mock_exec.assert_awaited_once_with("test_conn", "run", {"input": "check"})
+
+    def test_sanitize_raw_tool_content_strips_dsml(self):
+        raw = (
+            '<|DSML|tool_calls>'
+            '[{"name":"test_conn","arguments":{"input":"check"}}]'
+            '</|DSML|tool_calls>'
+        )
+        result = Brain._sanitize_raw_tool_content(raw)
+        assert "DSML" not in result
+        assert "test_conn" not in result
+        assert result == ""
+
+    def test_sanitize_raw_tool_content_strips_generic_tool_tags(self):
+        raw = '<tool_call>{"name":"x","arguments":{}}</tool_call>some text'
+        result = Brain._sanitize_raw_tool_content(raw)
+        assert "tool_call" not in result
+        assert result == "some text"
+
+    def test_sanitize_raw_tool_content_strips_mistral_tag(self):
+        raw = '[TOOL_CALLS]{"name":"x"}[/TOOL_CALLS]'
+        result = Brain._sanitize_raw_tool_content(raw)
+        assert "TOOL_CALLS" not in result
+        assert result == ""
+
+    @pytest.mark.asyncio
+    async def test_unparsed_serialized_content_is_sanitised(self):
+        """If the parser sees tool-like content but cannot extract usable calls,
+        the raw markup must be stripped instead of leaking to the user."""
+        brain = _make_brain(model="deepseek/deepseek-chat")
+        brain.memory.recall = AsyncMock(return_value=[])
+        brain.memory.save_conversation_turn = AsyncMock()
+
+        # Content looks like DSML but uses an unsupported inner format
+        # so the fallback parser will not produce valid tool calls.
+        bad_content = '<|DSML|invoke name="nonexistent_tool"><|DSML|parameter name="x">y</|DSML|parameter></|DSML|invoke>'
+        fallback_response = _mock_llm_response(content=bad_content)
+
+        with patch("lumen.core.brain.acompletion") as mock_llm:
+            mock_llm.return_value = fallback_response
+            result = await brain.think("do something", Session())
+
+        # The raw DSML must NOT appear in the user-facing message.
+        assert "<|DSML|" not in result["message"]
+        assert "invoke" not in result["message"]
+
 
 # ---- _coerce_args ------------------------------------------------------------
 
