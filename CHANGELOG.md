@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-04-26
+
+### Added
+- **SSE Streaming for `/api/chat`**: POST `/api/chat` now accepts `stream: true` and returns `text/event-stream` with events `session`, `delta`, `done`, `error`. Fully backward compatible — `stream: false` or absent returns identical JSON. New `brain.think_stream()` async generator with litellm `acompletion(stream=True)` and tool-call buffering.
+- **Shared Capabilities / Libraries between Modules**: Modules can declare `capabilities: [name1, name2]` in `module.yaml`. Lumen installs them to `~/.lumen/capabilities/<name>/` and injects them into `sys.path` during `connector.py` load via `CapabilityPathInjector` context manager. Terminal subprocesses receive capability paths in `PYTHONPATH`. Read-only enforcement on installed capability directories.
+- **31 new tests** (5 SSE streaming + 26 shared capabilities).
+
+### Fixed
+- **Brain Tool-Use Loop Alias Mismatch**: `ConnectorRegistry.as_tools()` now exposes both canonical full name and alias for single-action connectors. `_resolve_tool_calls()` allows unknown native tools when no fallback is present, letting execution errors be captured properly. Fixes 5 pre-existing `test_brain.py::TestToolUseLoop` failures.
+
+### Tests
+- **541 tests passing** (was 490)
+
 ## [0.5.1] - 2026-04-24
 
 ### Fixed
