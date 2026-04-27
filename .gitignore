@@ -37,6 +37,11 @@ neo/
 # Agent scratch directories
 .codex_clone/
 
+# Temporary verification directories
+.tmp_vercheck/
+.tmp_verify_*/
+test_debug*.py
+
 # User-installed modules (the installer copies catalog modules into lumen/modules/
 # at runtime). Only built-in modules (_template, scheduler) are tracked.
 lumen/modules/*

@@ -2942,11 +2942,10 @@ async def api_confirmations_list(request: Request):
     if guard is not None:
         return guard
 
-    brain = _get_brain()
-    if not brain:
+    if not _brain:
         return {"pending": [], "history": []}
 
-    gate = brain.confirmation_gate
+    gate = _brain.confirmation_gate
     return {
         "pending": gate.get_pending(),
         "pending_count": gate.get_pending_count(),
@@ -3018,15 +3017,14 @@ async def api_outputs_list(request: Request, limit: int = 50, session_id: str | 
 
     from lumen.core.output_types import OutputType
 
-    brain = _get_brain()
-    if not brain or not brain.memory:
+    if not _brain or not _brain.memory:
         return {"outputs": [], "count": 0, "available_types": [t.value for t in OutputType]}
 
     try:
-        outputs = await brain.memory.get_outputs(
+        outputs = await _brain.memory.get_outputs(
             session_id=session_id, output_type=output_type, limit=limit
         )
-        total = await brain.memory.count_outputs(session_id=session_id)
+        total = await _brain.memory.count_outputs(session_id=session_id)
     except Exception:
         outputs, total = [], 0
 
