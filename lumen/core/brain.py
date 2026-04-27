@@ -943,13 +943,31 @@ class Brain:
                 has_tool_calls = True
 
         if has_tool_calls and buffered_tool_calls:
-            # Build synthetic response and run tool use loop
+            # Build synthetic response and run tool use loop (streaming version)
             synthetic_response = self._build_synthetic_response(
                 full_content, buffered_tool_calls
             )
-            result = await self._tool_use_loop(synthetic_response, messages, tools)
-            if result.get("message"):
-                yield {"type": "delta", "content": result["message"]}
+            result = None
+            async for event in self._tool_use_loop_streaming(
+                synthetic_response, messages, tools
+            ):
+                if event.get("type") == "delta":
+                    yield event  # Final response text
+                    result = event.get("_result")
+                elif event.get("type") == "tool_progress":
+                    yield event  # "About to run tool X..."
+                elif event.get("type") == "tool_result":
+                    yield event  # "Tool X completed: ..."
+                elif event.get("type") == "tool_status":
+                    yield event  # "Iteration 2/3..."
+
+            # Fallback: if streaming didn't produce a result, run the blocking version
+            if result is None:
+                result = await self._tool_use_loop(
+                    synthetic_response, messages, tools
+                )
+                if result.get("message"):
+                    yield {"type": "delta", "content": result["message"]}
         else:
             result = {"message": full_content, "tool_calls": []}
 
@@ -2634,6 +2652,165 @@ class Brain:
             recovered = await self._retry_final_response_without_tools(messages)
             final_msg = recovered or partial_text or self._summarize_tool_results(all_tool_calls)
         return {"message": final_msg, "tool_calls": all_tool_calls}
+
+    async def _tool_use_loop_streaming(
+        self,
+        response,
+        messages: list[dict],
+        tools: list[dict] | None,
+        max_iterations: int = 3,
+    ):
+        """Streaming version of _tool_use_loop that yields progress events.
+
+        Yields event dicts with types:
+          - tool_progress: before executing a tool ({tool, iteration, total_calls})
+          - tool_result: after a tool completes ({tool, truncated_result, error?})
+          - tool_status: after each iteration's LLM call ({iteration, max_iterations})
+          - delta: final text response ({content, _result})
+
+        The final delta includes _result for the caller to extract the full result dict.
+        This keeps the connection alive during long tool execution sequences.
+        """
+        all_tool_calls = []
+        partial_text = ""
+
+        for iteration in range(max_iterations):
+            choice = response.choices[0]
+            msg = choice.message
+            if msg.content:
+                partial_text = msg.content
+
+            tool_calls = self._resolve_tool_calls(msg, tools)
+
+            # No tool calls — we have the final text response
+            if not tool_calls:
+                final_message = msg.content or ""
+                if self._has_serialized_tool_call_shape(final_message):
+                    final_message = self._sanitize_raw_tool_content(final_message)
+                if not final_message and all_tool_calls:
+                    recovered = await self._retry_final_response_without_tools(messages)
+                    final_message = recovered or partial_text or self._summarize_tool_results(all_tool_calls)
+
+                result = {
+                    "message": final_message,
+                    "tool_calls": all_tool_calls,
+                }
+                yield {"type": "delta", "content": final_message, "_result": result}
+                return
+
+            # Add assistant message with tool calls to context
+            messages.append(msg.model_dump())
+
+            # Yield iteration status
+            yield {
+                "type": "tool_status",
+                "iteration": iteration + 1,
+                "max_iterations": max_iterations,
+                "tools_this_round": len(tool_calls),
+                "total_so_far": len(all_tool_calls) + len(tool_calls),
+            }
+
+            # Execute all tool calls with progress events
+            for tool_call in tool_calls:
+                func = tool_call.function
+                tool_name = func.name or "unknown"
+                tool_error = None
+
+                # Yield progress before execution
+                yield {
+                    "type": "tool_progress",
+                    "tool": tool_name,
+                    "iteration": iteration + 1,
+                    "total_calls": len(all_tool_calls) + 1,
+                }
+
+                try:
+                    # Execute tool (same logic as _tool_use_loop)
+                    if tool_name == "neo__read_skill":
+                        tool_result = self._read_skill(func.arguments)
+                    elif tool_name == "neo__search_modules":
+                        tool_result = self._search_modules(func.arguments)
+                    elif tool_name == "neo__save_module_setup":
+                        tool_result = await self._save_module_setup(func.arguments)
+                    elif tool_name == "neo__save_artifact_setup":
+                        tool_result = await self._save_artifact_setup(func.arguments)
+                    elif tool_name == "neo__check_capability":
+                        tool_result = self._check_capability(func.arguments)
+                    elif self.connectors.has_tool(tool_name):
+                        params = json.loads(func.arguments) if func.arguments else {}
+                        params = self._coerce_args(params, tool_name, tools)
+                        tool_result = await self.connectors.execute_tool(
+                            tool_name, params
+                        )
+                    else:
+                        connector_name, action = self.connectors.parse_tool_name(
+                            tool_name
+                        )
+                        params = json.loads(func.arguments) if func.arguments else {}
+                        params = self._coerce_args(params, tool_name, tools)
+                        tool_result = await self.connectors.execute(
+                            connector_name, action, params
+                        )
+
+                    all_tool_calls.append(
+                        {"name": tool_name, "result": tool_result}
+                    )
+
+                    # Yield result after execution
+                    result_str = str(tool_result)
+                    yield {
+                        "type": "tool_result",
+                        "tool": tool_name,
+                        "truncated_result": result_str[:200],
+                        "result_length": len(result_str),
+                    }
+
+                except Exception as e:
+                    tool_error = str(e)
+                    all_tool_calls.append({"name": tool_name, "error": tool_error})
+                    yield {
+                        "type": "tool_result",
+                        "tool": tool_name,
+                        "error": tool_error,
+                    }
+
+                # Add tool result to messages for the LLM
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": json.dumps(
+                            {"error": tool_error} if tool_error else tool_result
+                        ),
+                    }
+                )
+
+            # Send tool results back to LLM
+            try:
+                options = self._completion_options(purpose="main", tools=tools)
+                response = await acompletion(
+                    model=options["model"],
+                    messages=messages,
+                    tools=options.get("tools"),
+                    temperature=options["temperature"],
+                    max_tokens=options["max_tokens"],
+                )
+            except Exception as e:
+                result = {
+                    "message": f"I completed the action but had trouble responding: {e}",
+                    "tool_calls": all_tool_calls,
+                }
+                yield {"type": "delta", "content": result["message"], "_result": result}
+                return
+
+        # Max iterations reached
+        final_msg = self._safe_extract_content(response)
+        if not final_msg and all_tool_calls:
+            recovered = await self._retry_final_response_without_tools(messages)
+            final_msg = recovered or partial_text or self._summarize_tool_results(all_tool_calls)
+
+        result = {"message": final_msg, "tool_calls": all_tool_calls}
+        yield {"type": "delta", "content": final_msg, "_result": result}
 
     async def _retry_final_response_without_tools(self, messages: list[dict]) -> str:
         """Ask the model for one last synthesis pass without tools."""

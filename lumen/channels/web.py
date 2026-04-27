@@ -1953,6 +1953,17 @@ async def api_chat(request: Request):
                     error_msg = chunk.get("content", "unknown error")
                     yield f"event: error\ndata: {json.dumps({'error': error_msg})}\n\n"
                     return
+                elif chunk.get("type") == "tool_progress":
+                    yield f"event: tool_progress\ndata: {json.dumps({'tool': chunk.get('tool'), 'iteration': chunk.get('iteration'), 'total_calls': chunk.get('total_calls')})}\n\n"
+                elif chunk.get("type") == "tool_result":
+                    data = {"tool": chunk.get("tool")}
+                    if chunk.get("error"):
+                        data["error"] = chunk["error"]
+                    else:
+                        data["truncated_result"] = chunk.get("truncated_result", "")
+                    yield f"event: tool_result\ndata: {json.dumps(data)}\n\n"
+                elif chunk.get("type") == "tool_status":
+                    yield f"event: tool_status\ndata: {json.dumps({'iteration': chunk.get('iteration'), 'max_iterations': chunk.get('max_iterations'), 'tools_this_round': chunk.get('tools_this_round'), 'total_so_far': chunk.get('total_so_far')})}\n\n"
         except Exception as e:
             yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
             return
