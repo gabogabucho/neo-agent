@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-04-27
+
+### Fixed
+- **Template error (`TemplateNotFound`) on `/settings/confirmations`**: `confirmations.html` was referencing `_partials/sidebar.html` which does not exist. Fixed by creating `_partials/settings_sidebar.html` and updating the template to use it.
+- **`NameError: _get_brain` in `/api/outputs` and `/api/tools/confirmations`**: Two API endpoints were calling a non-existent `_get_brain()` function. Changed to use the global `_brain` variable directly, consistent with all other endpoints.
+
+### Changed
+- **Dashboard navigation refactor**: Sidebar reduced from 13 items (with duplicates and flat hierarchy) to 5 clean items: Charlas, Memoria, Módulos, Estado, Ajustes. Removed the inline `panel-config` from the dashboard — settings now live under a dedicated `/settings` page with its own sidebar navigation.
+- **Unified settings sidebar**: New `_partials/settings_sidebar.html` Jinja partial shared across all `/settings/*` pages. Settings pages now have consistent navigation with a "Volver" link back to the dashboard.
+- **Merged Providers into Models**: `/settings/providers` now redirects to `/settings/models`. The providers health table is displayed within the Models page alongside model routing configuration.
+- **New `/settings/general` page**: Migrated the provider/model/API key/theme configuration from the dashboard's inline `panel-config` to a standalone settings page with a clean form layout.
+
 ## [1.1.0] - 2026-04-27
 
 ### Added
