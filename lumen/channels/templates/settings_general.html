@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="{{ language | default('es') }}" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lumen — Ajustes Generales</title>
+  <link rel="icon" href="/static/logo.png" type="image/png">
+  {% include "_partials/tokens.html" %}
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      display: flex;
+      font-family: var(--lumen-font); color: var(--lumen-ink);
+      background: var(--lumen-paper); font-size: 14px;
+    }
+    main { flex: 1; overflow-y: auto; padding: var(--lumen-s-5) var(--lumen-s-6); max-width: 900px; }
+    .page-header { margin-bottom: var(--lumen-s-5); }
+    .page-header h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+    .page-header p { color: var(--lumen-mute); font-size: 13px; }
+
+    /* Cards */
+    .l-card {
+      background: var(--lumen-paper-2); border-radius: var(--lumen-r);
+      border: 1px solid var(--lumen-line); padding: var(--lumen-s-4);
+      margin-bottom: var(--lumen-s-4);
+    }
+    .l-card h3 { font-size: 14px; font-weight: 600; margin-bottom: var(--lumen-s-3); }
+    .l-card-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--lumen-s-4); }
+    .l-card-grid .l-card { margin-bottom: 0; }
+
+    /* Form */
+    .settings-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--lumen-s-4); margin-bottom: var(--lumen-s-4); }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field label { font-size: 12px; font-weight: 500; color: var(--lumen-ink-soft); }
+    .l-input {
+      padding: 10px 12px; border: 1px solid var(--lumen-line);
+      border-radius: var(--lumen-r-sm); background: var(--lumen-paper);
+      color: var(--lumen-ink); font-size: 14px; outline: none;
+    }
+    .l-input:focus { border-color: var(--lumen-primary); }
+    .field-hint { font-size: 12px; color: var(--lumen-mute); margin-bottom: var(--lumen-s-4); }
+    .settings-actions { display: flex; align-items: center; gap: var(--lumen-s-3); }
+    .l-btn {
+      padding: 10px 20px; border: none; border-radius: var(--lumen-r-sm);
+      background: var(--lumen-primary); color: white; font-size: 14px;
+      font-weight: 500; cursor: pointer; text-decoration: none; display: inline-block;
+    }
+    .l-btn:hover { opacity: 0.9; }
+    .settings-message { font-size: 13px; color: var(--lumen-mute); }
+
+    /* Theme row */
+    .theme-row { display: flex; justify-content: space-between; align-items: center; }
+    .theme-toggle {
+      background: transparent; border: 1px solid var(--lumen-line);
+      padding: 8px 14px; border-radius: var(--lumen-r-sm); cursor: pointer;
+      display: flex; align-items: center; gap: 8px; color: var(--lumen-ink);
+    }
+
+    /* OpenRouter card */
+    .or-card { background: var(--lumen-paper-2); border-radius: var(--lumen-r); border: 1px solid var(--lumen-line); padding: var(--lumen-s-4); margin-bottom: var(--lumen-s-4); }
+    .or-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: var(--lumen-s-4); }
+    .or-head h3 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+    .or-head p { font-size: 13px; color: var(--lumen-ink-soft); }
+    .status-pill { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--lumen-warn-bg); color: var(--lumen-warn); font-weight: 500; }
+    .status-pill.connected { background: var(--lumen-ok-bg); color: var(--lumen-ok); }
+
+    @media (max-width: 768px) {
+      .settings-grid, .l-card-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  {% set active_settings = 'general' %}
+  {% include "_partials/settings_sidebar.html" %}
+
+  <main>
+    <div class="page-header">
+      <h2>General</h2>
+      <p>Proveedor, modelo, credenciales y preferencias</p>
+    </div>
+
+    <!-- OpenRouter -->
+    <div class="or-card">
+      <div class="or-head">
+        <div>
+          <h3>OpenRouter</h3>
+          <p>Conectá o renová la autorización. También podés editar manualmente abajo.</p>
+        </div>
+        <span class="status-pill {{ 'connected' if openrouter_connected else '' }}">{{ 'Conectado' if openrouter_connected else 'No conectado' }}</span>
+      </div>
+      <div class="settings-grid">
+        <div class="field">
+          <label>Estado</label>
+          <p style="font-size:13px;color:var(--lumen-ink-soft);">{{ 'Autorizado con OpenRouter' if openrouter_connected else 'Todavía no autorizado desde el dashboard' }}</p>
+        </div>
+        <div class="field">
+          <label>Modelo para conectar</label>
+          <p style="font-size:13px;color:var(--lumen-ink-soft);">{{ openrouter_model }}</p>
+        </div>
+      </div>
+      <div class="settings-actions">
+        <a class="l-btn" href="/oauth/openrouter/start?language={{ language }}&model={{ openrouter_model }}&port=3000&redirect_to=%2Fsettings%2Fgeneral">{{ 'Reautorizar OpenRouter' if openrouter_connected else 'Conectar OpenRouter' }}</a>
+        <span style="font-size:12px;color:var(--lumen-mute);">Usa el flujo de autorización existente.</span>
+      </div>
+    </div>
+
+    <!-- Settings Form -->
+    <div class="l-card">
+      <h3>Configuración manual</h3>
+      <form id="settings-form" class="settings-form" style="margin-top:16px;">
+        <div class="settings-grid">
+          <div class="field">
+            <label for="settings-provider">Proveedor</label>
+            <input id="settings-provider" name="provider" class="l-input" type="text" value="{{ provider }}" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="settings-model">Modelo</label>
+            <input id="settings-model" name="model" class="l-input" type="text" value="{{ model }}" autocomplete="off" required />
+          </div>
+          <div class="field">
+            <label for="settings-api-key-env">API key env</label>
+            <input id="settings-api-key-env" name="api_key_env" class="l-input" type="text" value="{{ api_key_env }}" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="settings-api-key">API key</label>
+            <input id="settings-api-key" name="api_key" class="l-input" type="password" value="" autocomplete="new-password" placeholder="Deja vacío para mantener la actual" />
+          </div>
+        </div>
+        <div class="field-hint">Guardar sin API key mantiene la clave guardada. Vaciar api_key_env quita esa variable del config.</div>
+        <div class="settings-actions">
+          <button id="settings-submit" type="submit" class="l-btn">Guardar cambios</button>
+          <span id="settings-message" class="settings-message">Listo para actualizar la configuración.</span>
+        </div>
+      </form>
+    </div>
+
+    <!-- Theme -->
+    <div class="l-card theme-row">
+      <div>
+        <h3>Tema</h3>
+        <p style="font-size:13px;color:var(--lumen-mute);">Lumen nace en luz. Podés pasar a oscuro cuando quieras.</p>
+      </div>
+      <button class="theme-toggle" onclick="toggleTheme()">
+        <svg id="theme-icon-light" fill="none" stroke="currentColor" viewBox="0 0 24 24" width="20" height="20">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v2m0 14v2m9-9h-2M5 12H3m15.364-6.364l-1.414 1.414M6.05 17.95l-1.414 1.414m0-13.728l1.414 1.414M17.95 17.95l1.414 1.414M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+        </svg>
+        <svg id="theme-icon-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24" width="20" height="20" style="display:none;">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+        </svg>
+        <span id="theme-label">Tema oscuro</span>
+      </button>
+    </div>
+
+    <!-- Current config summary -->
+    <div class="l-card-grid">
+      <div class="l-card">
+        <h3>Proveedor</h3>
+        <p style="font-size:13px;color:var(--lumen-ink-soft);margin-top:4px;">{{ provider }}</p>
+      </div>
+      <div class="l-card">
+        <h3>Modelo</h3>
+        <p style="font-size:13px;color:var(--lumen-ink-soft);margin-top:4px;">{{ model }}</p>
+      </div>
+      <div class="l-card">
+        <h3>API key env</h3>
+        <p style="font-size:13px;color:var(--lumen-ink-soft);margin-top:4px;">{{ api_key_env or '—' }}</p>
+      </div>
+      <div class="l-card">
+        <h3>API key</h3>
+        <p style="font-size:13px;color:var(--lumen-ink-soft);margin-top:4px;">{{ 'guardada' if has_api_key else 'no guardada' }}</p>
+      </div>
+      <div class="l-card">
+        <h3>Idioma</h3>
+        <p style="font-size:13px;color:var(--lumen-ink-soft);margin-top:4px;">{{ language }}</p>
+      </div>
+      <div class="l-card">
+        <h3>Personalidad</h3>
+        <p style="font-size:13px;color:var(--lumen-ink-soft);margin-top:4px;">{{ current_personality }}</p>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // Theme toggle
+    function toggleTheme() {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-theme') || 'light';
+      const next = current === 'light' ? 'dark' : 'light';
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('lumen-theme', next);
+      updateThemeIcons(next);
+    }
+    function updateThemeIcons(theme) {
+      const light = document.getElementById('theme-icon-light');
+      const dark = document.getElementById('theme-icon-dark');
+      const label = document.getElementById('theme-label');
+      if (light) light.style.display = theme === 'light' ? 'inline' : 'none';
+      if (dark) dark.style.display = theme === 'dark' ? 'inline' : 'none';
+      if (label) label.textContent = theme === 'light' ? 'Tema oscuro' : 'Tema claro';
+    }
+    const savedTheme = localStorage.getItem('lumen-theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    updateThemeIcons(savedTheme);
+
+    // Settings form
+    document.getElementById('settings-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const formData = new FormData(this);
+      const data = Object.fromEntries(formData.entries());
+      const msg = document.getElementById('settings-message');
+      msg.textContent = 'Guardando...';
+      try {
+        const resp = await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        if (resp.ok) {
+          msg.textContent = 'Guardado correctamente.';
+          setTimeout(() => window.location.reload(), 500);
+        } else {
+          msg.textContent = 'Error al guardar.';
+        }
+      } catch (err) {
+        msg.textContent = 'Error de red.';
+      }
+    });
+  </script>
+</body>
+</html>

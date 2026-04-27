@@ -1678,9 +1678,50 @@ async def dashboard(request: Request):
     )
 
 
+@app.get("/settings")
+async def page_settings_index(request: Request):
+    """Settings landing page — redirect to general."""
+    return RedirectResponse("/settings/general")
+
+
+@app.get("/settings/general")
+async def page_settings_general(request: Request):
+    """General settings page (provider, model, API key, theme)."""
+    loaded = _load_config()
+    if not _is_configured(loaded):
+        return RedirectResponse("/setup")
+    if _is_serve_mode() and not _request_has_owner_access(request, loaded):
+        return RedirectResponse(url="/login")
+    await _init_brain_from_config()
+
+    # Gather data from brain/config (same as dashboard panel-config)
+    personality_data = {}
+    if _brain and getattr(_brain, "personality", None):
+        personality_data = _brain.personality.current() or {}
+
+    openrouter_connected = bool(_config.get("openrouter_token"))
+    openrouter_model = loaded.get("openrouter_model", DEFAULT_OPENROUTER_MODEL)
+
+    return templates.TemplateResponse(
+        "settings_general.html",
+        {
+            "request": request,
+            "config": loaded,
+            "language": _config.get("language", "en"),
+            "provider": loaded.get("provider", ""),
+            "model": loaded.get("model", ""),
+            "api_key_env": loaded.get("api_key_env", ""),
+            "has_api_key": bool(loaded.get("api_key")),
+            "current_personality": personality_data.get("name", "default"),
+            "openrouter_connected": openrouter_connected,
+            "openrouter_model": openrouter_model,
+        },
+    )
+
+
 @app.get("/settings/models")
 async def page_models(request: Request):
-    """Model routing settings page."""
+    """Model routing & provider health settings page."""
     loaded = _load_config()
     if not _is_configured(loaded):
         return RedirectResponse("/setup")
@@ -1701,23 +1742,8 @@ async def page_models(request: Request):
 
 @app.get("/settings/providers")
 async def page_providers(request: Request):
-    """Provider health settings page."""
-    loaded = _load_config()
-    if not _is_configured(loaded):
-        return RedirectResponse("/setup")
-    if _is_serve_mode() and not _request_has_owner_access(request, loaded):
-        return RedirectResponse(url="/login")
-    await _init_brain_from_config()
-    ui = _locale.get("dashboard", {})
-    return templates.TemplateResponse(
-        "providers.html",
-        {
-            "request": request,
-            "config": loaded,
-            "ui": ui,
-            "language": _config.get("language", "en"),
-        },
-    )
+    """Provider page — merged into models. Redirect there."""
+    return RedirectResponse("/settings/models")
 
 
 @app.get("/settings/tools")
