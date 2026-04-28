@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.8] - 2026-04-28
+
+### Fixed
+- **DeepSeek `reasoning_content` no se pasaba de vuelta en tool use loop**: DeepSeek V3/R1 en thinking mode devuelve `reasoning_content` junto con `tool_calls`. Cuando el brain enviaba los resultados de tools de vuelta al LLM, el `reasoning_content` se perdía en `msg.model_dump()`, causando `litellm.BadRequestError: "The reasoning_content in the thinking mode must be passed back to the API."`. Fix: preservar `reasoning_content` explícitamente antes de `messages.append()` en `_tool_use_loop` y `_tool_use_loop_streaming`.
+
 ## [1.1.7] - 2026-04-28
 
 ### Fixed

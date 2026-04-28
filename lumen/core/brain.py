@@ -2662,7 +2662,10 @@ class Brain:
 
             # Execute all tool calls
             # First, add the assistant's message (with tool calls) to context
-            messages.append(msg.model_dump())
+            assistant_msg = msg.model_dump()
+            if hasattr(msg, "reasoning_content") and msg.reasoning_content:
+                assistant_msg["reasoning_content"] = msg.reasoning_content
+            messages.append(assistant_msg)
 
             for tool_call in tool_calls:
                 func = tool_call.function
@@ -2849,7 +2852,10 @@ class Brain:
                 return
 
             # Add assistant message with tool calls to context
-            messages.append(msg.model_dump())
+            assistant_msg = msg.model_dump()
+            if hasattr(msg, "reasoning_content") and msg.reasoning_content:
+                assistant_msg["reasoning_content"] = msg.reasoning_content
+            messages.append(assistant_msg)
 
             # Yield iteration status
             yield {
