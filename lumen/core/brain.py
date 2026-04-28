@@ -2630,9 +2630,14 @@ class Brain:
                     final_message = self._sanitize_raw_tool_content(final_message)
                 if not final_message:
                     if all_tool_calls:
-                        final_message = self._summarize_tool_results(all_tool_calls)
+                        recovered = await self._retry_final_response_without_tools(messages)
+                        final_message = recovered or ''
+                        if not final_message:
+                            final_message = self._summarize_tool_results(all_tool_calls)
                     if not final_message and partial_text:
-                        final_message = partial_text
+                        if self._has_serialized_tool_call_shape(partial_text):
+                            partial_text = self._sanitize_raw_tool_content(partial_text)
+                        final_message = partial_text or ""
                     if not final_message:
                         recovered = await self._retry_final_response_without_tools(messages)
                         final_message = recovered or ''
@@ -2765,9 +2770,14 @@ class Brain:
         final_msg = self._safe_extract_content(response)
         if not final_msg:
             if all_tool_calls:
-                final_msg = self._summarize_tool_results(all_tool_calls)
+                recovered = await self._retry_final_response_without_tools(messages)
+                final_msg = recovered or ''
+                if not final_msg:
+                    final_msg = self._summarize_tool_results(all_tool_calls)
             if not final_msg and partial_text:
-                final_msg = partial_text
+                if self._has_serialized_tool_call_shape(partial_text):
+                    partial_text = self._sanitize_raw_tool_content(partial_text)
+                final_msg = partial_text or ""
             if not final_msg:
                 recovered = await self._retry_final_response_without_tools(messages)
                 final_msg = recovered or ''
@@ -2809,7 +2819,13 @@ class Brain:
                     final_message = self._sanitize_raw_tool_content(final_message)
                 if not final_message and all_tool_calls:
                     recovered = await self._retry_final_response_without_tools(messages)
-                    final_message = recovered or partial_text or self._summarize_tool_results(all_tool_calls)
+                    final_message = recovered or ''
+                    if not final_message and partial_text:
+                        if self._has_serialized_tool_call_shape(partial_text):
+                            partial_text = self._sanitize_raw_tool_content(partial_text)
+                        final_message = partial_text or ""
+                    if not final_message:
+                        final_message = self._summarize_tool_results(all_tool_calls)
 
                 result = {
                     "message": final_message,
@@ -2968,9 +2984,14 @@ class Brain:
         final_msg = self._safe_extract_content(response)
         if not final_msg:
             if all_tool_calls:
-                final_msg = self._summarize_tool_results(all_tool_calls)
+                recovered = await self._retry_final_response_without_tools(messages)
+                final_msg = recovered or ''
+                if not final_msg:
+                    final_msg = self._summarize_tool_results(all_tool_calls)
             if not final_msg and partial_text:
-                final_msg = partial_text
+                if self._has_serialized_tool_call_shape(partial_text):
+                    partial_text = self._sanitize_raw_tool_content(partial_text)
+                final_msg = partial_text or ""
             if not final_msg:
                 recovered = await self._retry_final_response_without_tools(messages)
                 final_msg = recovered or ''

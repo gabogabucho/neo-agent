@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.4] - 2026-04-28
+
+### Fixed
+- **`TypeError: unhashable type: 'dict'` on all new dashboard pages**: 9 page handlers (`/settings/general`, `/settings/models`, `/settings/tools`, `/settings/security`, `/settings/channels`, `/settings/outputs`, `/settings/confirmations`, `/agent-status`, `/memory`) were passing `TemplateResponse("name", {context})` but Jinja2Templates expects `TemplateResponse(request, "name", context={...}). Fixed all 9 handlers to use the correct signature.
+- **16 failing tests**: `BrainStub` missing `confirmation_gate`, `model`, and `provider_health` attributes (12 tests). Fixed by adding missing attributes to stubs in `test_health.py`, `test_bugfixes_vps.py`, and `test_bug6_rest_auth.py`.
+- **`tool_use_loop` empty response recovery order**: When a tool call produced an empty final response, `_summarize_tool_results()` was called before `_retry_final_response_without_tools()`, preventing the retry from ever running. Reordered so retry happens first, summary only as last resort.
+- **`tool_use_loop` DSML leak via `partial_text`**: `partial_text` captured raw DSML tool markup before sanitization, then was reused as fallback after `final_message` had been sanitized — effectively reintroducing raw markup to the user. Added sanitization check on `partial_text` before using it as fallback. Applied consistently to `_tool_use_loop` and `_tool_use_loop_streaming` (both main and max-iterations paths).
+
 ## [1.1.3] - 2026-04-27
 
 ### Fixed

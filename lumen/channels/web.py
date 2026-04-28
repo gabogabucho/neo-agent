@@ -1704,9 +1704,9 @@ async def page_settings_general(request: Request):
     openrouter_model = loaded.get("openrouter_model", DEFAULT_OPENROUTER_MODEL)
 
     return templates.TemplateResponse(
+        request,
         "settings_general.html",
-        {
-            "request": request,
+        context={
             "config": loaded,
             "language": _config.get("language", "en"),
             "provider": loaded.get("provider", ""),
@@ -1731,9 +1731,9 @@ async def page_models(request: Request):
     await _init_brain_from_config()
     ui = _locale.get("dashboard", {})
     return templates.TemplateResponse(
+        request,
         "models.html",
-        {
-            "request": request,
+        context={
             "config": loaded,
             "ui": ui,
             "language": _config.get("language", "en"),
@@ -1758,9 +1758,9 @@ async def page_tools(request: Request):
     await _init_brain_from_config()
     ui = _locale.get("dashboard", {})
     return templates.TemplateResponse(
+        request,
         "tools.html",
-        {
-            "request": request,
+        context={
             "config": loaded,
             "ui": ui,
             "language": _config.get("language", "en"),
@@ -1779,9 +1779,9 @@ async def page_security(request: Request):
     await _init_brain_from_config()
     ui = _locale.get("dashboard", {})
     return templates.TemplateResponse(
+        request,
         "security.html",
-        {
-            "request": request,
+        context={
             "config": loaded,
             "ui": ui,
             "language": _config.get("language", "en"),
@@ -1800,9 +1800,9 @@ async def page_channels(request: Request):
     await _init_brain_from_config()
     ui = _locale.get("dashboard", {})
     return templates.TemplateResponse(
+        request,
         "channels.html",
-        {
-            "request": request,
+        context={
             "config": loaded,
             "ui": ui,
             "language": _config.get("language", "en"),
@@ -1821,9 +1821,9 @@ async def page_outputs(request: Request):
     await _init_brain_from_config()
     ui = _locale.get("dashboard", {})
     return templates.TemplateResponse(
+        request,
         "outputs.html",
-        {
-            "request": request,
+        context={
             "config": loaded,
             "ui": ui,
             "language": _config.get("language", "en"),
@@ -1842,9 +1842,9 @@ async def page_confirmations(request: Request):
     await _init_brain_from_config()
     ui = _locale.get("dashboard", {})
     return templates.TemplateResponse(
+        request,
         "confirmations.html",
-        {
-            "request": request,
+        context={
             "config": loaded,
             "ui": ui,
             "language": _config.get("language", "en"),
@@ -1864,9 +1864,9 @@ async def page_agent_status(request: Request):
     await _init_brain_from_config()
     ui = _locale.get("dashboard", {})
     return templates.TemplateResponse(
+        request,
         "agent-status.html",
-        {
-            "request": request,
+        context={
             "config": loaded,
             "ui": ui,
             "language": _config.get("language", "en"),
@@ -1885,9 +1885,9 @@ async def page_memory(request: Request):
     await _init_brain_from_config()
     ui = _locale.get("dashboard", {})
     return templates.TemplateResponse(
+        request,
         "memory.html",
-        {
-            "request": request,
+        context={
             "config": loaded,
             "ui": ui,
             "language": _config.get("language", "en"),

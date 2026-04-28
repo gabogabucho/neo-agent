@@ -25,6 +25,7 @@ class BrainStub:
         self.flows = []
         self.memory = MagicMock()
         self.think_calls = []
+        self.confirmation_gate = MagicMock()
 
     async def think(self, message, session):
         self.think_calls.append({"message": message, "session_id": session.session_id})

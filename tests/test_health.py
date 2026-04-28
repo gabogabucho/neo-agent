@@ -4,6 +4,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
 
@@ -19,6 +20,9 @@ class BrainStub:
         self.flows = []
         self.memory = None
         self.last_think = None
+        self.model = ""
+        self.confirmation_gate = MagicMock()
+        self.provider_health = None
 
 
 class HealthCheckTests(unittest.TestCase):
