@@ -76,6 +76,11 @@
     .risk-destructive { color: var(--lumen-err); }
     .risk-privileged { color: var(--lumen-err); font-weight: 600; }
     .empty-state { padding: var(--lumen-s-6); text-align: center; color: var(--lumen-mute); }
+
+    @media (max-width: 720px) {
+      main { padding: var(--lumen-s-4); }
+      .section-header { flex-direction: column; align-items: flex-start; gap: var(--lumen-s-2); }
+    }
   </style>
 </head>
 <body>

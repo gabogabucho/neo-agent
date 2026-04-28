@@ -75,4 +75,13 @@
   border-left-color: var(--lumen-primary);
 }
 .settings-nav-item svg { width: 20px; height: 20px; flex-shrink: 0; }
+
+@media (max-width: 720px) {
+  .settings-sidebar { width: 64px; min-height: auto; }
+  .settings-sidebar-head { padding: 12px 8px; }
+  .settings-sidebar-head h2 { display: none; }
+  .settings-nav-item { padding: 10px; justify-content: center; }
+  .settings-nav-item span { display: none; }
+  .back-link span { display: none; }
+}
 </style>

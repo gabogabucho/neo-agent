@@ -66,8 +66,10 @@
     .status-pill { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--lumen-warn-bg); color: var(--lumen-warn); font-weight: 500; }
     .status-pill.connected { background: var(--lumen-ok-bg); color: var(--lumen-ok); }
 
-    @media (max-width: 768px) {
+    @media (max-width: 720px) {
+      main { padding: var(--lumen-s-4); max-width: none; }
       .settings-grid, .l-card-grid { grid-template-columns: 1fr; }
+      .or-head { flex-direction: column; gap: var(--lumen-s-3); }
     }
   </style>
 </head>
