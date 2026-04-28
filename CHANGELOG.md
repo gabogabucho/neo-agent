@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] - 2026-04-27
+
+### Fixed
+- **`AttributeError: 'builtin_function_or_method' object has no attribute 'monotonic'`**: `from time import time` on line 19 shadowed the `time` module, breaking `time.monotonic()` calls. Changed to `import time` and updated all bare `time()` calls to `time.time()`.
+
 ## [1.1.2] - 2026-04-27
 
 ### Fixed

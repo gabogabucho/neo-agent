@@ -16,7 +16,7 @@ import secrets
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
-from time import time
+import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request as UrlRequest, urlopen
@@ -182,9 +182,9 @@ async def _reload_ipc_loop(interval: float = 1.0):
             request_id = payload.get("id")
             try:
                 await _perform_runtime_reload()
-                ack = {"id": request_id, "status": "ok", "ts": time()}
+                ack = {"id": request_id, "status": "ok", "ts": time.time()}
             except Exception as exc:
-                ack = {"id": request_id, "status": "error", "error": str(exc), "ts": time()}
+                ack = {"id": request_id, "status": "error", "error": str(exc), "ts": time.time()}
             ack_path.write_text(json.dumps(ack), encoding="utf-8")
             request_path.unlink(missing_ok=True)
         except asyncio.CancelledError:
@@ -531,7 +531,7 @@ def _read_signed_cookie(value: str | None, secret: str | None) -> dict | None:
         payload = json.loads(base64.urlsafe_b64decode(f"{body}==").decode("utf-8"))
     except Exception:
         return None
-    if payload.get("exp", 0) <= time():
+    if payload.get("exp", 0) <= time.time():
         return None
     return payload
 
@@ -542,7 +542,7 @@ def _issue_cookie(
     return _sign_cookie(
         {
             "scope": scope,
-            "exp": int(time()) + ttl_seconds,
+            "exp": int(time.time()) + ttl_seconds,
             "nonce": secrets.token_urlsafe(8),
         },
         secret,
@@ -1071,7 +1071,7 @@ def _base64url_sha256(value: str) -> str:
 
 
 def _cleanup_expired_oauth_states(now: float | None = None):
-    now = now or time()
+    now = now or time.time()
     expired = [
         key
         for key, payload in _oauth_state_store.items()
@@ -1558,7 +1558,7 @@ async def openrouter_oauth_start(
             "entry_path": entry_path,
             "active_personality": active_personality,
             "redirect_to": "/dashboard" if str(redirect_to or "").strip() == "/dashboard" else "/setup",
-            "expires_at": time() + OPENROUTER_STATE_TTL_SECONDS,
+            "expires_at": time.time() + OPENROUTER_STATE_TTL_SECONDS,
         },
     )
 
@@ -3282,7 +3282,7 @@ _OPENROUTER_MODELS_TTL = 300.0
 
 def _fetch_openrouter_models() -> list[dict]:
     """Fetch and cache OpenRouter's public model catalog (300s TTL)."""
-    now = time()
+    now = time.time()
     if (
         _openrouter_models_cache.get("items")
         and now - float(_openrouter_models_cache.get("fetched_at") or 0) < _OPENROUTER_MODELS_TTL
