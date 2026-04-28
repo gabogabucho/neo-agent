@@ -70,6 +70,7 @@ _awareness = None  # CapabilityAwareness — set during bootstrap
 _active_websockets: set[WebSocket] = set()  # Track connected clients
 _watchers = None  # FilePoller — started in lifespan
 _reload_ipc_task = None
+_web_start_time = time.monotonic()  # For uptime calculation
 
 LUMEN_DIR = Path.home() / ".lumen"
 CONFIG_PATH = LUMEN_DIR / "config.yaml"
@@ -3066,43 +3067,109 @@ async def api_outputs_list(request: Request, limit: int = 50, session_id: str | 
 
 @app.get("/api/agent/status")
 async def api_agent_status(request: Request):
-    """Return consolidated agent status snapshot."""
-    global _agent_status_collector
+    """Return consolidated agent status snapshot.
 
-    if _agent_status_collector is None:
-        _agent_status_collector = AgentStatusCollector(version=__version__)
+    Calculates everything directly from live brain state — no stale callbacks.
+    Format matches exactly what agent-status.html renderStatus() expects.
+    """
+    warnings: list[str] = []
 
-        # Register callbacks if brain is available
-        if _brain:
-            _agent_status_collector.register_model_callback(
-                lambda: _brain.model_router.get_model("main") if _brain.model_router else (_brain.model or "")
+    # Basic info
+    version = __version__
+    uptime = time.monotonic() - _web_start_time
+    model = ""
+    provider = ""
+    provider_status = "unknown"
+    degraded_mode = False
+    tools: list[str] = []
+    active_modules = 0
+    total_modules = 0
+    memory_total = 0
+    memory_sessions = 0
+
+    if _brain:
+        # Model
+        try:
+            model = (
+                _brain.model_router.get_model("main")
+                if _brain.model_router
+                else (_brain.model or "")
             )
-            _agent_status_collector.register_provider_callback(
-                lambda: _config.get("provider", "unknown") if _config else "unknown"
-            )
-            _agent_status_collector.register_provider_status_callback(
-                lambda: _brain.provider_health.get_best_provider().status.value if _brain.provider_health and _brain.provider_health.get_best_provider() else "unknown"
-            )
-            _agent_status_collector.register_degraded_mode_callback(
-                lambda: _brain.provider_health.is_degraded_mode() if _brain.provider_health else False
-            )
-            _agent_status_collector.register_tools_callback(
-                lambda: list(_brain.connectors.as_tools().keys()) if _brain.connectors else []
-            )
+        except Exception as e:
+            warnings.append(f"Model callback error: {e}")
+
+        # Provider
+        try:
+            provider = _config.get("provider", "unknown") if _config else "unknown"
+        except Exception as e:
+            warnings.append(f"Provider callback error: {e}")
+
+        # Provider health
+        try:
+            if _brain.provider_health:
+                best = _brain.provider_health.get_best_provider()
+                if best:
+                    provider_status = best.status.value
+                degraded_mode = _brain.provider_health.is_degraded_mode()
+        except Exception as e:
+            warnings.append(f"Provider health error: {e}")
+
+        # Tools (as_tools returns list[dict], extract function names)
+        try:
+            if _brain.connectors:
+                tools = [
+                    t["function"]["name"]
+                    for t in _brain.connectors.as_tools()
+                    if isinstance(t, dict) and "function" in t and "name" in t["function"]
+                ]
+        except Exception as e:
+            warnings.append(f"Tools callback error: {e}")
+
+        # Modules from registry
+        try:
+            if _brain.registry:
+                all_caps = _brain.registry.all()
+                module_caps = [c for c in all_caps if c.kind and c.kind.value == "module"]
+                total_modules = len(module_caps)
+                active_modules = sum(
+                    1 for m in module_caps if getattr(m, "status", None) != "error"
+                )
+        except Exception as e:
+            warnings.append(f"Modules callback error: {e}")
+
+        # Memory stats
+        try:
             if _brain.memory:
-                async def _get_memory_stats():
-                    try:
-                        stats = await _brain.memory.get_stats()
-                        from lumen.core.agent_status import MemoryStats
-                        return MemoryStats(**stats)
-                    except Exception:
-                        from lumen.core.agent_status import MemoryStats
-                        return MemoryStats()
-                mem_stats = await _get_memory_stats()
-                _agent_status_collector.register_memory_callback(lambda: mem_stats)
+                stats = await _brain.memory.get_stats()
+                memory_total = stats.get("total_memories", 0)
+                memory_sessions = stats.get("total_sessions", 0)
+        except Exception as e:
+            warnings.append(f"Memory callback error: {e}")
 
-    snapshot = _agent_status_collector.snapshot()
-    return snapshot.to_dict()
+    # Auto-detect warnings
+    if degraded_mode:
+        warnings.append("All providers are down — running in degraded mode")
+    if provider_status == "down":
+        warnings.append(f"Current provider '{provider}' is down")
+    elif provider_status == "degraded":
+        warnings.append(f"Current provider '{provider}' is degraded")
+
+    return {
+        "version": version,
+        "uptime_seconds": round(uptime, 1),
+        "model": model,
+        "provider": provider,
+        "provider_status": provider_status,
+        "degraded_mode": degraded_mode,
+        "active_modules": active_modules,
+        "total_modules": total_modules,
+        "tools": tools,
+        "memory": {
+            "total_memories": memory_total,
+            "sessions": memory_sessions,
+        },
+        "warnings": warnings,
+    }
 
 
 # ─── Memory & Lessons API ───

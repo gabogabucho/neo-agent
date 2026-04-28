@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] - 2026-04-27
+
+### Fixed
+- **`/api/agent/status` returning empty data and `'list' object has no attribute 'keys'` warning**: The endpoint was using stale callbacks with two critical bugs: (1) `list(_brain.connectors.as_tools().keys())` failed because `as_tools()` returns `list[dict]`, not a dict; (2) memory stats were captured once at collector creation time and never refreshed; (3) channels and modules callbacks were never registered. Rewrote the endpoint to calculate all fields directly from live `_brain` state on every request, matching exactly the format expected by `agent-status.html` (`tools` array, `memory` object with `total_memories`/`sessions`, `active_modules`/`total_modules` counts).
+
 ## [1.1.1] - 2026-04-27
 
 ### Fixed
