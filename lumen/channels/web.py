@@ -190,6 +190,9 @@ async def _perform_runtime_reload() -> None:
     await sync_runtime_modules(_brain, config=_config, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR)
     refresh_runtime_registry(_brain, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR, active_channels=["web"])
     reload_runtime_personality_surface(_brain, config=_config, pkg_dir=PKG_DIR, lumen_dir=LUMEN_DIR)
+    if getattr(_brain, "tool_policy", None) is not None:
+        _brain.tool_policy.load_defaults()
+        _brain.tool_policy.load_config(_config)
 
 
 async def _reload_ipc_loop(interval: float = 1.0):
@@ -2972,7 +2975,7 @@ async def api_tools_list(request: Request):
     loaded = _load_config()
     if not _is_configured(loaded):
         return JSONResponse(status_code=400, content={"error": "not_configured"})
-    guard = _require_owner_access(request, loaded)
+    guard = _require_any_auth(request, loaded)
     if guard is not None:
         return guard
 
@@ -2989,7 +2992,7 @@ async def api_security_show(request: Request):
     loaded = _load_config()
     if not _is_configured(loaded):
         return JSONResponse(status_code=400, content={"error": "not_configured"})
-    guard = _require_owner_access(request, loaded)
+    guard = _require_any_auth(request, loaded)
     if guard is not None:
         return guard
 
@@ -3121,7 +3124,7 @@ async def api_channels_status(request: Request):
     loaded = _load_config()
     if not _is_configured(loaded):
         return JSONResponse(status_code=400, content={"error": "not_configured"})
-    guard = _require_owner_access(request, loaded)
+    guard = _require_any_auth(request, loaded)
     if guard is not None:
         return guard
 
@@ -3170,7 +3173,7 @@ async def api_outputs_list(request: Request, limit: int = 50, session_id: str | 
     loaded = _load_config()
     if not _is_configured(loaded):
         return JSONResponse(status_code=400, content={"error": "not_configured"})
-    guard = _require_owner_access(request, loaded)
+    guard = _require_any_auth(request, loaded)
     if guard is not None:
         return guard
 
@@ -3368,7 +3371,7 @@ async def api_lessons_list(request: Request, limit: int = 50):
     loaded = _load_config()
     if not _is_configured(loaded):
         return JSONResponse(status_code=400, content={"error": "not_configured"})
-    guard = _require_owner_access(request, loaded)
+    guard = _require_any_auth(request, loaded)
     if guard is not None:
         return guard
 

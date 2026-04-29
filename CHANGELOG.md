@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.9] - 2026-04-28
+
+### Fixed
+- **ToolPolicy.get_policy double-concat (issue #5)**: `get_policy()` concatenaba `tool_name + "__" + action`, pero `brain.py` ya pasaba `tool_name` en formato `"connector__action"` (ej: `"terminal__execute"`). Esto producía claves como `"terminal__execute__execute"` que nunca matcheaban, forzando a todos los tools a `confirm_required=True` y timeout de 60s. Fix: verificar `tool_name in self._entries` antes de concatenar.
+- **DeepSeek `reasoning_content` vacío (issue #6)**: El fix v1.1.8 usaba `if msg.reasoning_content:` (truthy), que omitía el campo cuando era `""`. DeepSeek requiere que el campo exista siempre. Fix: usar `getattr(msg, "reasoning_content", None) is not None` y si no existe, poner `""`.
+- **Reload no recarga ToolPolicy (issue #7)**: `_perform_runtime_reload()` en `web.py` recargaba config, connectors, registry y personality, pero nunca `_brain.tool_policy`. Cambios en `security.confirm_terminal` o `security.privileged_tool_names` requerían restart del servidor. Fix: agregar `_brain.tool_policy.load_defaults()` + `_brain.tool_policy.load_config(_config)` al reload.
+- **Bearer auth incompleto en dashboard endpoints (issue #8)**: En v1.1.7 arreglé 4 endpoints, pero faltaban 5 más del issue. Ahora todos los GET endpoints de API aceptan `Authorization: Bearer <token>`:
+  - `/api/tools`, `/api/channels`, `/api/outputs`, `/api/security`, `/api/lessons`
+
 ## [1.1.8] - 2026-04-28
 
 ### Fixed

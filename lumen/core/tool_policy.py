@@ -187,6 +187,9 @@ class ToolPolicy:
 
     def get_policy(self, tool_name: str, action: str = "") -> ToolPolicyEntry:
         """Get policy for a connector action or standalone tool."""
+        # tool_name may already be "connector__action" — check it first
+        if tool_name in self._entries:
+            return self._entries[tool_name]
         key = f"{tool_name}__{action}" if action else tool_name
         entry = self._entries.get(key)
 
